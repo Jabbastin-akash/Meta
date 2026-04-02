@@ -1,0 +1,130 @@
+# OpenEnv Environment Specification
+# Search Ranking Optimization Environment
+
+id: search-ranking-env
+name: Search Ranking Optimization
+description: >
+  An environment that simulates a real-world search ranking system.
+  An agent receives a query and a set of candidate documents, then produces
+  an ordered ranking. The environment evaluates the ranking using NDCG
+  (Normalized Discounted Cumulative Gain) and returns a continuous reward
+  between 0.0 and 1.0. Designed for training and evaluating LLM-based
+  ranking agents.
+
+version: "1.0.0"
+
+# ---------------------------------------------------------------------------
+# Interface schemas
+# ---------------------------------------------------------------------------
+
+observation:
+  type: object
+  description: The state visible to the agent at each step.
+  properties:
+    query:
+      type: string
+      description: The user search query to rank documents for.
+    documents:
+      type: array
+      description: List of candidate documents to be ranked.
+      items:
+        type: object
+        properties:
+          id:
+            type: string
+            description: Unique identifier for the document.
+          text:
+            type: string
+            description: Content or title of the document.
+        required:
+          - id
+          - text
+
+action:
+  type: object
+  description: The agent's output — an ordered ranking of document IDs.
+  properties:
+    ranking:
+      type: array
+      description: >
+        Ordered list of document IDs from most relevant to least relevant.
+        Must include all document IDs from the observation exactly once.
+      items:
+        type: string
+  required:
+    - ranking
+
+reward:
+  type: number
+  minimum: 0.0
+  maximum: 1.0
+  description: >
+    A continuous score based on NDCG. 1.0 indicates a perfect ranking,
+    0.0 indicates the worst possible ranking. Partial credit is awarded
+    for partially correct orderings.
+
+# ---------------------------------------------------------------------------
+# Tasks
+# ---------------------------------------------------------------------------
+
+tasks:
+  - id: easy
+    description: >
+      3–5 documents per query with clear relevance differences and low
+      ambiguity. Designed as a baseline sanity check — a competent ranker
+      should achieve near-perfect scores.
+
+  - id: medium
+    description: >
+      5–10 documents per query with overlapping relevance scores and
+      distractor documents. Requires the agent to distinguish between
+      closely related but differently relevant content.
+
+  - id: hard
+    description: >
+      10–15 documents per query with high ambiguity, very similar
+      relevance levels, and misleading content. Tests fine-grained
+      ranking ability under noisy conditions.
+
+# ---------------------------------------------------------------------------
+# Evaluation
+# ---------------------------------------------------------------------------
+
+evaluation:
+  primary_metric: ndcg
+  description: >
+    Ranking quality is measured primarily by NDCG (Normalized Discounted
+    Cumulative Gain), which rewards placing highly relevant documents at
+    the top of the ranking. Additional diagnostic metrics include
+    Precision@K and Mean Reciprocal Rank (MRR).
+  additional_metrics:
+    - precision_at_k
+    - mrr
+
+# ---------------------------------------------------------------------------
+# Constraints
+# ---------------------------------------------------------------------------
+
+constraints:
+  deterministic: true
+  single_step_episodes: true
+  max_steps_per_episode: 1
+  runtime_limit_minutes: 20
+
+# ---------------------------------------------------------------------------
+# Environment variables
+# ---------------------------------------------------------------------------
+
+environment_variables:
+  - name: API_BASE_URL
+    description: Base URL for the OpenAI-compatible LLM endpoint.
+    required: true
+  - name: MODEL_NAME
+    description: Model identifier for the LLM.
+    required: true
+  - name: OPENAI_API_KEY
+    description: API key for the LLM endpoint.
+    required: true
+  - name: HF_TOKEN
+    description: Hugging Face token for Space deployment.
+    required: false
