@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "search-ranking-env"
+version = "1.0.0"
+description = "OpenEnv Search Ranking Optimization Environment"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+    { name = "Author" }
+]
+dependencies = [
+    "pydantic>=2.0.0",
+    "openai>=1.0.0",
+    "python-dotenv>=1.0.0",
+    "torch",
+    "numpy",
+    "datasets",
+    "sentence-transformers"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest"
+]
