@@ -102,4 +102,4 @@ When the API lacks a valid key, the script performs a deterministic fallback gra
 - **Hard**: `0.6124`
 
 A production LLM (e.g. GPT-4o) should easily achieve > `0.95` on Easy and > `0.85` on Hard.
-
+# Meta
