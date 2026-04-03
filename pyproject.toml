@@ -7,7 +7,7 @@ name = "search-ranking-env"
 version = "1.0.0"
 description = "OpenEnv Search Ranking Optimization Environment"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 authors = [
     { name = "Jabbastin Akash" }
 ]
@@ -16,14 +16,12 @@ dependencies = [
     "fastapi",
     "uvicorn",
     "pydantic",
-    "openai"
+    "openai",
+    "openenv-core>=0.2.0"
 ]
 
+[project.scripts]
+server = "server.app:main"
+
 [tool.setuptools]
-py-modules = [
-    "app",
-    "env",
-    "grader",
-    "models",
-    "inference"
-]
+packages = ["server", "server.tasks"]
