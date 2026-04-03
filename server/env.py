@@ -8,11 +8,18 @@ and returns structured outputs using Pydantic models.
 import random
 from typing import Tuple, Optional
 
-from models import Document, Observation, Action, Reward, Info
-from grader import grade
-from tasks.easy import TASKS as EASY_TASKS
-from tasks.medium import TASKS as MEDIUM_TASKS
-from tasks.hard import TASKS as HARD_TASKS
+try:
+    from .models import Document, Observation, Action, Reward, Info
+    from .grader import grade
+    from .tasks.easy import TASKS as EASY_TASKS
+    from .tasks.medium import TASKS as MEDIUM_TASKS
+    from .tasks.hard import TASKS as HARD_TASKS
+except ImportError:  # Fallback for running with server/ on sys.path
+    from models import Document, Observation, Action, Reward, Info
+    from grader import grade
+    from tasks.easy import TASKS as EASY_TASKS
+    from tasks.medium import TASKS as MEDIUM_TASKS
+    from tasks.hard import TASKS as HARD_TASKS
 
 
 TASK_REGISTRY = {
