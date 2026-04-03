@@ -2,15 +2,14 @@
 Baseline inference script for the Search Ranking Environment.
 
 Interacts with an LLM via the OpenAI client configured against an
-OpenRouter-compatible endpoint.  Runs every difficulty level (easy,
-medium, hard), logs results in the strict format required by OpenEnv
-automated grading.
+OpenAI-compatible endpoint. Logs single-line [START]/[STEP]/[END]
+records required by OpenEnv automated grading.
 
 Required environment variables
 ------------------------------
-  API_BASE_URL   – LLM endpoint  (e.g. https://openrouter.ai/api/v1)
-  MODEL_NAME     – model identifier
-  OPENAI_API_KEY – API / OpenRouter key
+    API_BASE_URL         - LLM endpoint (default: https://openrouter.ai/api/v1)
+    MODEL_NAME           - model identifier (default: openai/gpt-4o-mini)
+    OPENROUTER_API_KEY   - API key (falls back to OPENAI_API_KEY or HF_TOKEN)
 """
 
 import os
@@ -24,26 +23,63 @@ except ImportError:
     pass
 import re
 import time
-from typing import List
+from typing import List, Optional
 
 from openai import OpenAI
 
-from env import SearchRankingEnv
-from models import Action, Observation
+from server.env import SearchRankingEnv
+from server.models import Action, Observation
 
 
 # ---------------------------------------------------------------------------
 # Configuration (read from environment — NEVER hardcoded)
 # ---------------------------------------------------------------------------
 
-API_BASE_URL: str = os.environ.get("API_BASE_URL", "")
-MODEL_NAME: str = os.environ.get("MODEL_NAME", "")
-OPENAI_API_KEY: str = os.environ.get("OPENAI_API_KEY", "")
+DEFAULT_API_BASE_URL = "https://openrouter.ai/api/v1"
+DEFAULT_MODEL_NAME = "openai/gpt-4o-mini"
+
+API_BASE_URL: str = os.environ.get("API_BASE_URL", DEFAULT_API_BASE_URL)
+MODEL_NAME: str = os.environ.get("MODEL_NAME", DEFAULT_MODEL_NAME)
+API_KEY: str = (
+    os.environ.get("OPENROUTER_API_KEY")
+    or os.environ.get("OPENAI_API_KEY")
+    or os.environ.get("HF_TOKEN")
+    or os.environ.get("API_KEY", "")
+)
+
+TASK_NAME: str = os.environ.get("SEARCH_RANKING_TASK") or os.environ.get("TASK_NAME", "easy")
+BENCHMARK: str = os.environ.get("SEARCH_RANKING_BENCHMARK", "search-ranking-env")
+SUCCESS_SCORE_THRESHOLD: float = float(os.environ.get("SUCCESS_SCORE_THRESHOLD", "0.5"))
 
 SEED: int = 42                              # fixed seed for reproducibility
-DIFFICULTIES: List[str] = ["easy", "medium", "hard"]
 MAX_RETRIES: int = 1                        # retry once on transient failure
 RETRY_DELAY: float = 2.0                    # seconds between retries
+
+
+# ---------------------------------------------------------------------------
+# Strict-format logging
+# ---------------------------------------------------------------------------
+
+def log_start(task: str, env: str, model: str) -> None:
+    print(f"[START] task={task} env={env} model={model}", flush=True)
+
+
+def log_step(step: int, action: str, reward: float, done: bool, error: Optional[str]) -> None:
+    error_val = error if error else "null"
+    done_val = str(done).lower()
+    print(
+        f"[STEP] step={step} action={action} reward={reward:.2f} "
+        f"done={done_val} error={error_val}",
+        flush=True,
+    )
+
+
+def log_end(success: bool, steps: int, rewards: List[float]) -> None:
+    rewards_str = ",".join(f"{r:.2f}" for r in rewards)
+    print(
+        f"[END] success={str(success).lower()} steps={steps} rewards={rewards_str}",
+        flush=True,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -52,14 +88,12 @@ RETRY_DELAY: float = 2.0                    # seconds between retries
 
 def get_client() -> OpenAI:
     """Create an OpenAI client pointing at the configured endpoint."""
-    if not API_BASE_URL:
-        print("WARNING: API_BASE_URL not set", file=sys.stderr)
-    if not OPENAI_API_KEY:
-        print("WARNING: OPENAI_API_KEY not set", file=sys.stderr)
+    if not API_KEY:
+        print("WARNING: OPENROUTER_API_KEY (or OPENAI_API_KEY/HF_TOKEN) not set", file=sys.stderr)
 
     return OpenAI(
         base_url=API_BASE_URL,
-        api_key=OPENAI_API_KEY,
+        api_key=API_KEY,
     )
 
 
@@ -215,7 +249,7 @@ def get_llm_ranking(client: OpenAI, observation: Observation) -> List[str]:
                 max_tokens=1024,
             )
 
-            response_text = response.choices[0].message.content.strip()
+            response_text = (response.choices[0].message.content or "").strip()
             return parse_ranking(response_text, valid_ids)
 
         except Exception as exc:
@@ -240,36 +274,43 @@ def get_llm_ranking(client: OpenAI, observation: Observation) -> List[str]:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    """Run the full inference pipeline and print strict-format logs."""
+    """Run a single OpenEnv episode and print strict-format logs."""
     env = SearchRankingEnv(seed=SEED)
     client = get_client()
 
-    print("[START]")
+    rewards: List[float] = []
+    steps_taken = 0
+    success = False
 
-    for difficulty in DIFFICULTIES:
-        # 1. Reset environment
-        observation = env.reset(difficulty)
+    log_start(task=TASK_NAME, env=BENCHMARK, model=MODEL_NAME)
 
-        # 2. Get ranking from LLM (or fallback)
+    try:
+        observation = env.reset(TASK_NAME)
+
         ranking = get_llm_ranking(client, observation)
-
-        # 3. Create action and step
         action = Action(ranking=ranking)
-        _, reward, done, info = env.step(action)
+        _, reward, done, _info = env.step(action)
 
-        # 4. Log in strict format
-        print()
-        print("[STEP]")
-        print(f"task: {difficulty}")
-        print(f"query: {observation.query}")
-        print(f"ranking: {ranking}")
-        print(f"reward: {reward.score}")
-        print(f"ndcg: {info.ndcg}")
-        print(f"precision_at_k: {info.precision_at_k}")
-        print(f"mrr: {info.mrr}")
+        steps_taken = 1
+        rewards.append(reward.score)
 
-    print()
-    print("[END]")
+        action_str = json.dumps(ranking, separators=(",", ":"))
+        log_step(step=1, action=action_str, reward=reward.score, done=done, error=None)
+
+        success = reward.score >= SUCCESS_SCORE_THRESHOLD
+
+    except Exception as exc:
+        print(f"ERROR: Inference failed: {exc}", file=sys.stderr)
+
+    finally:
+        close_fn = getattr(env, "close", None)
+        if callable(close_fn):
+            try:
+                close_fn()
+            except Exception as exc:
+                print(f"WARNING: env.close failed: {exc}", file=sys.stderr)
+
+        log_end(success=success, steps=steps_taken, rewards=rewards)
 
 
 if __name__ == "__main__":

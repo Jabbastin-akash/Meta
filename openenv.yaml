@@ -123,8 +123,11 @@ environment_variables:
     description: Model identifier for the LLM.
     required: true
   - name: OPENAI_API_KEY
-    description: API key for the LLM endpoint.
-    required: true
+    description: Alternative API key name for OpenAI-compatible endpoints.
+    required: false
   - name: HF_TOKEN
-    description: Hugging Face token for Space deployment.
+    description: API key for the LLM endpoint (HF token).
+    required: true
+  - name: LOCAL_IMAGE_NAME
+    description: Local Docker image name for from_docker_image usage.
     required: false
