@@ -16,14 +16,33 @@ import os
 import sys
 import json
 
+ENV_PATH = os.path.join(os.path.dirname(__file__), ".env")
+
+
+def _load_dotenv_fallback(path: str) -> None:
+    """Load a minimal .env file if python-dotenv isn't available."""
+    if not os.path.exists(path):
+        return
+    with open(path, "r", encoding="utf-8") as handle:
+        for raw_line in handle:
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            key = key.strip()
+            value = value.strip().strip("\"").strip("'")
+            if key:
+                os.environ[key] = value
+
+
 try:
     from dotenv import load_dotenv
-    load_dotenv()
+    load_dotenv(dotenv_path=ENV_PATH, override=True)
 except ImportError:
-    pass
+    _load_dotenv_fallback(ENV_PATH)
 import re
 import time
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from openai import OpenAI
 
@@ -47,7 +66,7 @@ API_KEY: str = (
     or os.environ.get("API_KEY", "")
 )
 
-TASK_NAME: str = os.environ.get("SEARCH_RANKING_TASK") or os.environ.get("TASK_NAME", "easy")
+TASK_NAME: str = os.environ.get("SEARCH_RANKING_TASK") or os.environ.get("TASK_NAME", "all")
 BENCHMARK: str = os.environ.get("SEARCH_RANKING_BENCHMARK", "search-ranking-env")
 SUCCESS_SCORE_THRESHOLD: float = float(os.environ.get("SUCCESS_SCORE_THRESHOLD", "0.5"))
 
@@ -126,6 +145,7 @@ def build_prompt(observation: Observation) -> str:
         f"1. Return ONLY a JSON array of document IDs, nothing else.\n"
         f"2. Include every document ID exactly once.\n"
         f"3. Do NOT include any explanation, markdown, or extra text.\n\n"
+        f"4. Do NOT wrap the JSON in code fences or add any other text.\n\n"
         f"EXAMPLE OUTPUT FORMAT:\n"
         f"{example_ids}\n\n"
         f"Your ranking:"
@@ -133,20 +153,26 @@ def build_prompt(observation: Observation) -> str:
     return prompt
 
 
+def build_retry_prompt(valid_ids: List[str]) -> str:
+    """Build a strict retry prompt when the model returns invalid JSON."""
+    return (
+        "Your previous response was invalid. "
+        "Return ONLY a JSON array containing each of these IDs exactly once, "
+        "with no extra text and no code fences. "
+        f"Valid IDs: {json.dumps(valid_ids)}"
+    )
+
+
 # ---------------------------------------------------------------------------
-# Response Parsing (multi-strategy, deterministic)
+# Response Parsing (strict JSON)
 # ---------------------------------------------------------------------------
 
-def parse_ranking(response_text: str, valid_ids: List[str]) -> List[str]:
+def parse_ranking(response_text: str, valid_ids: List[str]) -> Tuple[Optional[List[str]], Optional[str]]:
     """
     Parse the LLM response into an ordered list of document IDs.
 
-    Tries multiple extraction strategies in order:
-      1. Direct JSON array parse
-      2. JSON array inside markdown code fence
-      3. JSON array anywhere in the text (regex)
-      4. Line-by-line ID extraction
-      5. Fallback: original document order (deterministic)
+    Requires the full response to be a JSON array of strings containing
+    each valid ID exactly once.
 
     Args:
         response_text: Raw text from the LLM.
@@ -154,63 +180,29 @@ def parse_ranking(response_text: str, valid_ids: List[str]) -> List[str]:
                        and as the deterministic fallback order).
 
     Returns:
-        Ordered list of document IDs.
+        (ranking, error_message). ranking is None when invalid.
     """
     valid_set = set(valid_ids)
     n = len(valid_ids)
 
-    def _is_valid(ids: List[str]) -> bool:
-        return (
-            isinstance(ids, list)
-            and len(ids) == n
-            and all(isinstance(x, str) for x in ids)
-            and set(ids) == valid_set
-        )
-
-    # --- Strategy 1: direct JSON parse of entire response ----------------
     try:
         parsed = json.loads(response_text.strip())
-        if _is_valid(parsed):
-            return parsed
-    except (json.JSONDecodeError, ValueError, TypeError):
-        pass
+    except (json.JSONDecodeError, ValueError, TypeError) as exc:
+        return None, f"Response is not valid JSON: {exc}"
 
-    # --- Strategy 2: extract from markdown code fence --------------------
-    fence_match = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", response_text, re.DOTALL)
-    if fence_match:
-        try:
-            parsed = json.loads(fence_match.group(1).strip())
-            if _is_valid(parsed):
-                return parsed
-        except (json.JSONDecodeError, ValueError, TypeError):
-            pass
+    if not isinstance(parsed, list):
+        return None, "Response JSON is not an array."
 
-    # --- Strategy 3: find first JSON array anywhere ----------------------
-    array_match = re.search(r"\[.*?\]", response_text, re.DOTALL)
-    if array_match:
-        try:
-            parsed = json.loads(array_match.group())
-            if _is_valid(parsed):
-                return parsed
-        except (json.JSONDecodeError, ValueError, TypeError):
-            pass
+    if len(parsed) != n:
+        return None, f"Response array length {len(parsed)} does not match expected {n}."
 
-    # --- Strategy 4: line-by-line ID extraction --------------------------
-    found_ids: List[str] = []
-    for line in response_text.split("\n"):
-        line = line.strip()
-        for vid in valid_ids:
-            if vid in line and vid not in found_ids:
-                found_ids.append(vid)
-    if _is_valid(found_ids):
-        return found_ids
+    if not all(isinstance(x, str) for x in parsed):
+        return None, "Response array must contain only strings."
 
-    # --- Strategy 5: deterministic fallback (original observation order) -
-    print(
-        "WARNING: Could not parse LLM response, using fallback order",
-        file=sys.stderr,
-    )
-    return list(valid_ids)
+    if set(parsed) != valid_set:
+        return None, "Response array must contain exactly the provided document IDs."
+
+    return parsed, None
 
 
 # ---------------------------------------------------------------------------
@@ -226,31 +218,53 @@ def get_llm_ranking(client: OpenAI, observation: Observation) -> List[str]:
     """
     valid_ids = [doc.id for doc in observation.documents]
     prompt = build_prompt(observation)
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are a search ranking assistant. "
+                "Respond ONLY with a JSON array of document IDs."
+            ),
+        },
+        {
+            "role": "user",
+            "content": prompt,
+        },
+    ]
 
     last_error = None
     for attempt in range(1 + MAX_RETRIES):
         try:
             response = client.chat.completions.create(
                 model=MODEL_NAME,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "You are a search ranking assistant. "
-                            "Respond ONLY with a JSON array of document IDs."
-                        ),
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt,
-                    },
-                ],
+                messages=messages,
                 temperature=0.0,
                 max_tokens=1024,
             )
 
             response_text = (response.choices[0].message.content or "").strip()
-            return parse_ranking(response_text, valid_ids)
+            ranking, error = parse_ranking(response_text, valid_ids)
+            if ranking is not None:
+                return ranking
+
+            last_error = error or "Invalid JSON response"
+            print(
+                f"WARNING: Invalid LLM response (attempt {attempt + 1}): {last_error}",
+                file=sys.stderr,
+            )
+            print("RAW_RESPONSE_BEGIN", file=sys.stderr)
+            print(response_text, file=sys.stderr)
+            print("RAW_RESPONSE_END", file=sys.stderr)
+
+            if attempt < MAX_RETRIES:
+                messages.extend(
+                    [
+                        {"role": "assistant", "content": response_text},
+                        {"role": "user", "content": build_retry_prompt(valid_ids)},
+                    ]
+                )
+                time.sleep(RETRY_DELAY)
+                continue
 
         except Exception as exc:
             last_error = exc
@@ -274,33 +288,44 @@ def get_llm_ranking(client: OpenAI, observation: Observation) -> List[str]:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    """Run a single OpenEnv episode and print strict-format logs."""
+    """Run OpenEnv episodes and print strict-format logs."""
     env = SearchRankingEnv(seed=SEED)
     client = get_client()
 
-    rewards: List[float] = []
-    steps_taken = 0
-    success = False
-
-    log_start(task=TASK_NAME, env=BENCHMARK, model=MODEL_NAME)
+    task_name = TASK_NAME.lower().strip()
+    if task_name == "all":
+        tasks = ["easy", "medium", "hard"]
+    else:
+        tasks = [task_name]
 
     try:
-        observation = env.reset(TASK_NAME)
+        for task in tasks:
+            rewards: List[float] = []
+            steps_taken = 0
+            success = False
 
-        ranking = get_llm_ranking(client, observation)
-        action = Action(ranking=ranking)
-        _, reward, done, _info = env.step(action)
+            log_start(task=task, env=BENCHMARK, model=MODEL_NAME)
 
-        steps_taken = 1
-        rewards.append(reward.score)
+            try:
+                observation = env.reset(task)
 
-        action_str = json.dumps(ranking, separators=(",", ":"))
-        log_step(step=1, action=action_str, reward=reward.score, done=done, error=None)
+                ranking = get_llm_ranking(client, observation)
+                action = Action(ranking=ranking)
+                _, reward, done, _info = env.step(action)
 
-        success = reward.score >= SUCCESS_SCORE_THRESHOLD
+                steps_taken = 1
+                rewards.append(reward.score)
 
-    except Exception as exc:
-        print(f"ERROR: Inference failed: {exc}", file=sys.stderr)
+                action_str = json.dumps(ranking, separators=(",", ":"))
+                log_step(step=1, action=action_str, reward=reward.score, done=done, error=None)
+
+                success = reward.score >= SUCCESS_SCORE_THRESHOLD
+
+            except Exception as exc:
+                print(f"ERROR: Inference failed for task '{task}': {exc}", file=sys.stderr)
+
+            finally:
+                log_end(success=success, steps=steps_taken, rewards=rewards)
 
     finally:
         close_fn = getattr(env, "close", None)
@@ -309,8 +334,6 @@ def main() -> None:
                 close_fn()
             except Exception as exc:
                 print(f"WARNING: env.close failed: {exc}", file=sys.stderr)
-
-        log_end(success=success, steps=steps_taken, rewards=rewards)
 
 
 if __name__ == "__main__":
