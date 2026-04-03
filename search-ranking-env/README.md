@@ -1,3 +1,15 @@
+---
+title: Search Ranking Env
+emoji: 🔍
+colorFrom: blue
+colorTo: green
+sdk: docker
+app_file: app.py
+pinned: false
+---
+
+Check out the configuration reference at https://huggingface.co/docs/hub/spaces-config-reference
+
 # Search Ranking Optimization Environment
 
 An OpenEnv-compatible environment designed to simulate a real-world search ranking system. 
