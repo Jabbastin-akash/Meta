@@ -20,4 +20,10 @@ dependencies = [
 ]
 
 [tool.setuptools]
-packages = ["."]
+py-modules = [
+    "app",
+    "env",
+    "grader",
+    "models",
+    "inference"
+]
