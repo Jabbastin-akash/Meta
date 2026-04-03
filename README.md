@@ -72,7 +72,7 @@ For the baseline inference script, configure the following:
 ```bash
 export API_BASE_URL="https://openrouter.ai/api/v1" # Or any OpenAI-compatible API
 export MODEL_NAME="your-model-name"
-export OPENAI_API_KEY="your-api-key"
+export HF_TOKEN="your-api-key" # Or OPENAI_API_KEY
 ```
 
 ### Running with Docker
