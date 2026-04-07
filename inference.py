@@ -12,6 +12,8 @@ Required environment variables
     OPENROUTER_API_KEY   - API key (falls back to OPENAI_API_KEY or HF_TOKEN)
 """
 
+from __future__ import annotations
+
 import os
 import sys
 import json
@@ -20,7 +22,11 @@ import time
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-from openai import OpenAI
+try:
+    from openai import OpenAI
+except BaseException:  # pragma: no cover
+    OpenAI = None  # type: ignore[assignment]
+
 from server.env import SearchRankingEnv
 from server.models import Action, Observation
 
@@ -119,10 +125,18 @@ def log_end(success: bool, steps: int, rewards: List[float]) -> None:
 
 def get_client() -> OpenAI | None:
     """Configure and return an OpenAI client."""
+    if OpenAI is None:
+        print(
+            "WARNING: openai package is not installed; using deterministic fallback",
+            file=sys.stderr,
+        )
+        return None
+
     api_key = (
         os.environ.get("OPENROUTER_API_KEY")
         or os.environ.get("OPENAI_API_KEY")
         or os.environ.get("HF_TOKEN")
+        or os.environ.get("API_KEY")
     )
     if not api_key:
         _load_env()
@@ -130,22 +144,38 @@ def get_client() -> OpenAI | None:
             os.environ.get("OPENROUTER_API_KEY")
             or os.environ.get("OPENAI_API_KEY")
             or os.environ.get("HF_TOKEN")
+            or os.environ.get("API_KEY")
         )
 
     if os.environ.get("DEBUG", "").strip() in {"1", "true", "yes"}:
         print(f"DEBUG: API Key loaded: {bool(api_key)}", file=sys.stderr)
 
+    base_url = os.environ.get("API_BASE_URL", "https://openrouter.ai/api/v1")
+
+    # Many OpenAI-compatible endpoints ignore the API key but the OpenAI SDK
+    # requires *some* value. Use a placeholder key so we can still talk to
+    # local/self-hosted servers.
     if not api_key:
         print(
-            "WARNING: OPENROUTER_API_KEY (or OPENAI_API_KEY/HF_TOKEN) not set",
+            "WARNING: No API key found (OPENROUTER_API_KEY/OPENAI_API_KEY/HF_TOKEN/API_KEY); "
+            "using placeholder and continuing",
+            file=sys.stderr,
+        )
+        api_key = "DUMMY_KEY"
+
+    try:
+        return OpenAI(
+            base_url=base_url,
+            api_key=api_key,
+        )
+    except BaseException as exc:
+        # Some environments can raise non-Exception errors here (e.g., SystemExit
+        # from dependency/config wrappers). Never crash inference on client init.
+        print(
+            f"WARNING: Failed to initialize OpenAI client (base_url={base_url!r}): {exc}",
             file=sys.stderr,
         )
         return None
-
-    return OpenAI(
-        base_url=os.environ.get("API_BASE_URL", "https://openrouter.ai/api/v1"),
-        api_key=api_key,
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -324,8 +354,19 @@ def get_llm_ranking(client: OpenAI | None, observation: Observation) -> List[str
 
 def main() -> None:
     """Run OpenEnv episodes and print strict-format logs."""
-    env = SearchRankingEnv(seed=SEED)
-    client = get_client()
+    try:
+        env = SearchRankingEnv(seed=SEED)
+    except Exception as exc:
+        # If the environment can't even be constructed, we can't proceed.
+        print(f"ERROR: Failed to initialize environment: {exc}", file=sys.stderr)
+        return
+
+    try:
+        client = get_client()
+    except BaseException as exc:
+        # Absolute last-resort: never let client initialization crash inference.
+        print(f"WARNING: get_client() raised; using deterministic fallback: {exc}", file=sys.stderr)
+        client = None
 
     task_name = TASK_NAME.lower().strip()
     if task_name == "all":
