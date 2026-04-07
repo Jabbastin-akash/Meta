@@ -7,7 +7,7 @@ against ground truth relevance scores.
 Design principles:
   - Deterministic
   - No external ML libraries
-  - Continuous scoring strictly in (0, 1)
+    - Continuous scoring in [0.0, 1.0]
   - Robust edge-case handling
 """
 
@@ -23,16 +23,32 @@ class GraderResult(NamedTuple):
 
 
 # ---------------------------------------------------------------------------
-# Safety helper (CRITICAL)
+# Safety helpers (CRITICAL)
 # ---------------------------------------------------------------------------
 
-def _safe_score(score: float) -> float:
-    """Clamp all scores strictly within (0, 1)."""
+def _clamp_0_1(score: float) -> float:
+    """Clamp scores into [0.0, 1.0] and guard against NaN/Inf."""
+    if not isinstance(score, (int, float)):
+        return 0.0
+    if math.isnan(score) or math.isinf(score):
+        return 0.0
     if score <= 0.0:
-        return 0.001
+        return 0.0
     if score >= 1.0:
-        return 0.999
-    return score
+        return 1.0
+    return float(score)
+
+
+def _dedupe_in_order(items: List[str]) -> List[str]:
+    """Remove duplicates while preserving order (defensive; Action already enforces uniqueness)."""
+    seen: set[str] = set()
+    out: List[str] = []
+    for x in items:
+        if x in seen:
+            continue
+        seen.add(x)
+        out.append(x)
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -53,22 +69,28 @@ def _compute_dcg(relevances: List[float]) -> float:
 def compute_ndcg(predicted_ranking: List[str],
                  ground_truth: Dict[str, float]) -> float:
 
+    if not ground_truth:
+        return 0.0
+
     if not predicted_ranking:
-        return _safe_score(0.0)
+        return 0.0
+
+    predicted_ranking = _dedupe_in_order(predicted_ranking)
 
     predicted_relevances = [
         ground_truth.get(doc_id, 0.0) for doc_id in predicted_ranking
     ]
     dcg = _compute_dcg(predicted_relevances)
 
-    ideal_relevances = sorted(ground_truth.values(), reverse=True)
+    # Compare against the best possible ordering for the same cutoff length.
+    ideal_relevances = sorted(ground_truth.values(), reverse=True)[: len(predicted_ranking)]
     idcg = _compute_dcg(ideal_relevances)
 
     if idcg == 0.0:
-        raw = 1.0 if dcg == 0.0 else 0.0
-        return _safe_score(raw)
+        # All relevances are zero — every ordering is equally "ideal".
+        return 1.0 if dcg == 0.0 else 0.0
 
-    return _safe_score(dcg / idcg)
+    return _clamp_0_1(dcg / idcg)
 
 
 def compute_precision_at_k(predicted_ranking: List[str],
@@ -76,7 +98,9 @@ def compute_precision_at_k(predicted_ranking: List[str],
                            k: int = 3) -> float:
 
     if not predicted_ranking or k <= 0:
-        return _safe_score(0.0)
+        return 0.0
+
+    predicted_ranking = _dedupe_in_order(predicted_ranking)
 
     k = min(k, len(predicted_ranking))
 
@@ -86,20 +110,22 @@ def compute_precision_at_k(predicted_ranking: List[str],
     )
 
     precision = relevant_count / k
-    return _safe_score(precision)
+    return _clamp_0_1(precision)
 
 
 def compute_mrr(predicted_ranking: List[str],
                 ground_truth: Dict[str, float]) -> float:
 
     if not predicted_ranking:
-        return _safe_score(0.0)
+        return 0.0
+
+    predicted_ranking = _dedupe_in_order(predicted_ranking)
 
     for i, doc_id in enumerate(predicted_ranking):
         if ground_truth.get(doc_id, 0.0) > 0.0:
-            return _safe_score(1.0 / (i + 1))
+            return _clamp_0_1(1.0 / (i + 1))
 
-    return _safe_score(0.0)
+    return 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -114,19 +140,9 @@ def grade(predicted_ranking: List[str],
     p_at_k = compute_precision_at_k(predicted_ranking, ground_truth, k=k)
     mrr = compute_mrr(predicted_ranking, ground_truth)
 
-    # Round first
-    ndcg = round(ndcg, 6)
-    p_at_k = round(p_at_k, 6)
-    mrr = round(mrr, 6)
-
-    # Then clamp (CRITICAL ORDER)
-    ndcg = _safe_score(ndcg)
-    p_at_k = _safe_score(p_at_k)
-    mrr = _safe_score(mrr)
-
     return GraderResult(
-        score=ndcg,
-        ndcg=ndcg,
-        precision_at_k=p_at_k,
-        mrr=mrr,
+        score=_clamp_0_1(round(ndcg, 6)),
+        ndcg=_clamp_0_1(round(ndcg, 6)),
+        precision_at_k=_clamp_0_1(round(p_at_k, 6)),
+        mrr=_clamp_0_1(round(mrr, 6)),
     )

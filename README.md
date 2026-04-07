@@ -102,4 +102,23 @@ When the API lacks a valid key, the script performs a deterministic fallback gra
 - **Hard**: `0.6124`
 
 A production LLM (e.g. GPT-4o) should easily achieve > `0.95` on Easy and > `0.85` on Hard.
+
+## 8. Metrics, Edge Cases, Complexity
+
+**Implemented metrics** (see `server/grader.py`):
+- `ndcg` (primary reward): DCG uses `log2` discounting; NDCG normalizes by the ideal DCG.
+- `precision_at_k` (aux metric): fraction of top-$K$ items with relevance $> 0$.
+- `mrr` (aux metric): reciprocal rank of the first relevant item.
+
+**Edge cases handled**:
+- Empty predictions: return `0.0`.
+- Missing/unknown IDs: treated as relevance `0.0`.
+- Duplicate IDs: defensively deduped in metrics (the Action validator also rejects duplicates).
+- All-zero relevance: NDCG returns `1.0` (any ordering is equally ideal).
+- Division-by-zero: safe handling when ideal DCG is `0`.
+
+**Complexity**:
+- NDCG: $O(n \log n)$ (sorting for ideal DCG) + $O(n)$ DCG.
+- Precision@K: $O(k)$.
+- MRR: $O(n)$.
 # Meta

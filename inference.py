@@ -18,6 +18,7 @@ import os
 import sys
 import json
 import time
+import math
 
 from pathlib import Path
 from typing import List, Optional, Tuple
@@ -88,13 +89,28 @@ RETRY_DELAY: float = 2.0                    # seconds between retries
 # Strict-format logging
 # ---------------------------------------------------------------------------
 
-def _clamp_open_interval(x: float) -> float:
-    """Clamp all scores strictly within (0, 1)."""
+def _clamp_0_1(x: float) -> float:
+    """Clamp score into [0.0, 1.0] and guard against NaN/Inf."""
+    if not isinstance(x, (int, float)):
+        return 0.0
+    if math.isnan(x) or math.isinf(x):
+        return 0.0
     if x <= 0.0:
-        return 0.001
+        return 0.0
     if x >= 1.0:
-        return 0.999
-    return x
+        return 1.0
+    return float(x)
+
+
+def _format_score(x: float) -> str:
+    """Human/judge-friendly float formatting: no forced decimals or trailing zeros."""
+    x = _clamp_0_1(x)
+    if x == 0.0:
+        return "0"
+    if x == 1.0:
+        return "1"
+    # Fixed precision avoids scientific notation; trimming removes trailing zeros.
+    return f"{x:.12f}".rstrip("0").rstrip(".")
 
 def log_start(task: str, env: str, model: str) -> None:
     print(f"[START] task={task} env={env} model={model}", flush=True)
@@ -103,16 +119,16 @@ def log_start(task: str, env: str, model: str) -> None:
 def log_step(step: int, action: str, reward: float, done: bool, error: Optional[str]) -> None:
     error_val = error if error else "null"
     done_val = str(done).lower()
-    reward = _clamp_open_interval(reward)
+    reward_str = _format_score(reward)
     print(
-        f"[STEP] step={step} action={action} reward={reward:.6f} "
+        f"[STEP] step={step} action={action} reward={reward_str} "
         f"done={done_val} error={error_val}",
         flush=True,
     )
 
 
 def log_end(success: bool, steps: int, rewards: List[float]) -> None:
-    rewards_str = ",".join(f"{_clamp_open_interval(r):.6f}" for r in rewards)
+    rewards_str = ",".join(_format_score(r) for r in rewards)
     print(
         f"[END] success={str(success).lower()} steps={steps} rewards={rewards_str}",
         flush=True,

@@ -1,5 +1,6 @@
-from typing import List, Optional
-from pydantic import BaseModel, Field, model_validator, confloat
+from typing import List
+
+from pydantic import BaseModel, Field, model_validator
 
 class Document(BaseModel):
     """Represents a candidate item to be ranked."""
@@ -38,6 +39,6 @@ class Reward(BaseModel):
 
 class Info(BaseModel):
     """Provides additional evaluation metrics."""
-    ndcg: float = Field(..., description="Normalized Discounted Cumulative Gain")
-    precision_at_k: float = Field(..., description="Precision at top K results")
-    mrr: float = Field(..., description="Mean Reciprocal Rank")
+    ndcg: float = Field(..., ge=0.0, le=1.0, description="Normalized Discounted Cumulative Gain")
+    precision_at_k: float = Field(..., ge=0.0, le=1.0, description="Precision at top K results")
+    mrr: float = Field(..., ge=0.0, le=1.0, description="Mean Reciprocal Rank")

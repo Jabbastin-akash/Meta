@@ -8,15 +8,6 @@ and returns structured outputs using Pydantic models.
 import random
 from typing import Tuple, Optional
 
-
-def _safe_score(score: float) -> float:
-    """Clamp all scores strictly within (0, 1)."""
-    if score <= 0.0:
-        return 0.001
-    if score >= 1.0:
-        return 0.999
-    return score
-
 try:
     from .models import Document, Observation, Action, Reward, Info
     from .grader import grade
@@ -133,23 +124,23 @@ class SearchRankingEnv:
         except ValueError:
             return (
                 obs,
-                Reward(score=_safe_score(0.0)),
+                Reward(score=0.0),
                 True,
                 Info(
-                    ndcg=_safe_score(0.0),
-                    precision_at_k=_safe_score(0.0),
-                    mrr=_safe_score(0.0),
+                    ndcg=0.0,
+                    precision_at_k=0.0,
+                    mrr=0.0,
                 ),
             )
 
         # --- Step 2: Compute reward via grader ---
         result = grade(action.ranking, self._ground_truth, k=3)
 
-        reward = Reward(score=_safe_score(result.score))
+        reward = Reward(score=result.score)
         info = Info(
-            ndcg=_safe_score(result.ndcg),
-            precision_at_k=_safe_score(result.precision_at_k),
-            mrr=_safe_score(result.mrr),
+            ndcg=result.ndcg,
+            precision_at_k=result.precision_at_k,
+            mrr=result.mrr,
         )
 
         # --- Step 3: Single-step episode ---
