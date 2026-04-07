@@ -79,8 +79,8 @@ export HF_TOKEN="your-api-key" # Or OPENAI_API_KEY
 
 Build and run the OpenEnv HTTP API server (which powers the Hugging Face Deployment):
 ```bash
-docker build -t search-env .
-docker run -p 7860:7860 search-env
+docker build --build-arg PYTHON_IMAGE=python:3.11.9-slim -t search-ranking-env .
+docker run --rm -p 7860:7860 search-ranking-env
 ```
 The API responds to `/reset` and `/step`.
 

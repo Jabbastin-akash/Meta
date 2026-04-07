@@ -1,7 +1,8 @@
 # ---------------------------------------------------------------------------
 # Stage 1: Build
 # ---------------------------------------------------------------------------
-FROM python:3.11-slim AS builder
+ARG PYTHON_IMAGE=python:3.11.9-slim-bookworm
+FROM ${PYTHON_IMAGE} AS builder
 
 WORKDIR /app
 
@@ -12,7 +13,7 @@ RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 # ---------------------------------------------------------------------------
 # Stage 2: Runtime
 # ---------------------------------------------------------------------------
-FROM python:3.11-slim
+FROM ${PYTHON_IMAGE}
 
 LABEL maintainer="search-ranking-env"
 LABEL description="OpenEnv Search Ranking Optimization Environment"
