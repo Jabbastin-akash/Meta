@@ -83,12 +83,11 @@ RETRY_DELAY: float = 2.0                    # seconds between retries
 # ---------------------------------------------------------------------------
 
 def _clamp_open_interval(x: float) -> float:
-    MIN_SCORE = 0.1
-    MAX_SCORE = 0.85
-    if x <= MIN_SCORE:
-        return MIN_SCORE
-    if x >= MAX_SCORE:
-        return MAX_SCORE
+    """Replace exact boundary values only: 0.0 → 0.1, 1.0 → 0.85."""
+    if x <= 0.0:
+        return 0.1
+    if x >= 1.0:
+        return 0.85
     return x
 
 def log_start(task: str, env: str, model: str) -> None:

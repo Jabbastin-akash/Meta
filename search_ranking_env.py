@@ -4,13 +4,11 @@ from typing import List, Dict, Any, Tuple, Optional
 
 
 def _safe_score(score: float) -> float:
-    """Clamp to be strictly within (0.1, 0.85)."""
-    MIN_SCORE = 0.1
-    MAX_SCORE = 0.85
-    if score <= MIN_SCORE:
-        return MIN_SCORE
-    if score >= MAX_SCORE:
-        return MAX_SCORE
+    """Replace exact boundary values only: 0.0 → 0.1, 1.0 → 0.85."""
+    if score <= 0.0:
+        return 0.1
+    if score >= 1.0:
+        return 0.85
     return score
 
 class SearchRankingEnv:
