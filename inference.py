@@ -15,50 +15,51 @@ Required environment variables
 import os
 import sys
 import json
+import time
 
-ENV_PATH = os.path.join(os.path.dirname(__file__), ".env")
+from pathlib import Path
+from typing import List, Optional, Tuple
+
+from openai import OpenAI
+from server.env import SearchRankingEnv
+from server.models import Action, Observation
+
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    load_dotenv = None
 
 
 def _load_dotenv_fallback(path: str) -> None:
     """Load a minimal .env file if python-dotenv isn't available."""
     if not os.path.exists(path):
         return
-    with open(path, "r", encoding="utf-8") as handle:
-        for raw_line in handle:
-            line = raw_line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            key, value = line.split("=", 1)
-            key = key.strip()
-            value = value.strip().strip("\"").strip("'")
-            if key:
-                os.environ[key] = value
+    try:
+        with open(path, encoding="utf-8-sig") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    key, value = line.split("=", 1)
+                    key = key.strip().lstrip("\ufeff")
+                    value = value.strip()
+                    if key and value:
+                        os.environ.setdefault(key, value)
+    except Exception:
+        pass
 
 
-try:
-    from dotenv import load_dotenv
-    load_dotenv(dotenv_path=ENV_PATH, override=True)
-except ImportError:
-    _load_dotenv_fallback(ENV_PATH)
-import re
-import time
-from typing import List, Optional, Tuple
+def _load_env() -> None:
+    env_path = Path(__file__).parent / ".env"
+    if load_dotenv is not None:
+        load_dotenv(dotenv_path=env_path)
 
-from openai import OpenAI
-
-from server.env import SearchRankingEnv
-from server.models import Action, Observation
+    _load_dotenv_fallback(str(env_path))
 
 
-# ---------------------------------------------------------------------------
-# Configuration (read from environment — NEVER hardcoded)
-# ---------------------------------------------------------------------------
+_load_env()
 
-DEFAULT_API_BASE_URL = "https://openrouter.ai/api/v1"
-DEFAULT_MODEL_NAME = "openai/gpt-4o-mini"
-
-API_BASE_URL: str = os.environ.get("API_BASE_URL", DEFAULT_API_BASE_URL)
-MODEL_NAME: str = os.environ.get("MODEL_NAME", DEFAULT_MODEL_NAME)
+API_BASE_URL: str = os.environ.get("API_BASE_URL", "https://openrouter.ai/api/v1")
+MODEL_NAME: str = os.environ.get("MODEL_NAME", "openai/gpt-4o-mini")
 API_KEY: str = (
     os.environ.get("OPENROUTER_API_KEY")
     or os.environ.get("OPENAI_API_KEY")
@@ -66,6 +67,8 @@ API_KEY: str = (
     or os.environ.get("API_KEY", "")
 )
 
+# --- Environment Configuration ---
+REMOTE_ENV_URL: Optional[str] = os.environ.get("REMOTE_ENV_URL")
 TASK_NAME: str = os.environ.get("SEARCH_RANKING_TASK") or os.environ.get("TASK_NAME", "all")
 BENCHMARK: str = os.environ.get("SEARCH_RANKING_BENCHMARK", "search-ranking-env")
 SUCCESS_SCORE_THRESHOLD: float = float(os.environ.get("SUCCESS_SCORE_THRESHOLD", "0.5"))
@@ -79,6 +82,13 @@ RETRY_DELAY: float = 2.0                    # seconds between retries
 # Strict-format logging
 # ---------------------------------------------------------------------------
 
+def _clamp_open_interval(x: float, eps: float = 1e-6) -> float:
+    if x <= 0.0:
+        return eps
+    if x >= 1.0:
+        return 1.0 - eps
+    return x
+
 def log_start(task: str, env: str, model: str) -> None:
     print(f"[START] task={task} env={env} model={model}", flush=True)
 
@@ -86,15 +96,16 @@ def log_start(task: str, env: str, model: str) -> None:
 def log_step(step: int, action: str, reward: float, done: bool, error: Optional[str]) -> None:
     error_val = error if error else "null"
     done_val = str(done).lower()
+    reward = _clamp_open_interval(reward)
     print(
-        f"[STEP] step={step} action={action} reward={reward:.2f} "
+        f"[STEP] step={step} action={action} reward={reward:.6f} "
         f"done={done_val} error={error_val}",
         flush=True,
     )
 
 
 def log_end(success: bool, steps: int, rewards: List[float]) -> None:
-    rewards_str = ",".join(f"{r:.2f}" for r in rewards)
+    rewards_str = ",".join(f"{_clamp_open_interval(r):.6f}" for r in rewards)
     print(
         f"[END] success={str(success).lower()} steps={steps} rewards={rewards_str}",
         flush=True,
@@ -105,14 +116,34 @@ def log_end(success: bool, steps: int, rewards: List[float]) -> None:
 # LLM Client
 # ---------------------------------------------------------------------------
 
-def get_client() -> OpenAI:
-    """Create an OpenAI client pointing at the configured endpoint."""
-    if not API_KEY:
-        print("WARNING: OPENROUTER_API_KEY (or OPENAI_API_KEY/HF_TOKEN) not set", file=sys.stderr)
+def get_client() -> OpenAI | None:
+    """Configure and return an OpenAI client."""
+    api_key = (
+        os.environ.get("OPENROUTER_API_KEY")
+        or os.environ.get("OPENAI_API_KEY")
+        or os.environ.get("HF_TOKEN")
+    )
+    if not api_key:
+        _load_env()
+        api_key = (
+            os.environ.get("OPENROUTER_API_KEY")
+            or os.environ.get("OPENAI_API_KEY")
+            or os.environ.get("HF_TOKEN")
+        )
+
+    if os.environ.get("DEBUG", "").strip() in {"1", "true", "yes"}:
+        print(f"DEBUG: API Key loaded: {bool(api_key)}", file=sys.stderr)
+
+    if not api_key:
+        print(
+            "WARNING: OPENROUTER_API_KEY (or OPENAI_API_KEY/HF_TOKEN) not set",
+            file=sys.stderr,
+        )
+        return None
 
     return OpenAI(
-        base_url=API_BASE_URL,
-        api_key=API_KEY,
+        base_url=os.environ.get("API_BASE_URL", "https://openrouter.ai/api/v1"),
+        api_key=api_key,
     )
 
 
@@ -209,7 +240,7 @@ def parse_ranking(response_text: str, valid_ids: List[str]) -> Tuple[Optional[Li
 # LLM Ranking Call (with retry)
 # ---------------------------------------------------------------------------
 
-def get_llm_ranking(client: OpenAI, observation: Observation) -> List[str]:
+def get_llm_ranking(client: OpenAI | None, observation: Observation) -> List[str]:
     """
     Send the observation to the LLM and return a ranked list of document IDs.
 
@@ -231,6 +262,9 @@ def get_llm_ranking(client: OpenAI, observation: Observation) -> List[str]:
             "content": prompt,
         },
     ]
+
+    if client is None:
+        return list(valid_ids)
 
     last_error = None
     for attempt in range(1 + MAX_RETRIES):

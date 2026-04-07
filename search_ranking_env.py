@@ -1,6 +1,6 @@
 import math
 import random
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Optional
 
 class SearchRankingEnv:
     """
@@ -10,7 +10,9 @@ class SearchRankingEnv:
     and receives a reward proportional to the NDCG of the provided ranking.
     """
     
-    def __init__(self):
+    def __init__(self, seed: Optional[int] = None):
+        if seed is not None:
+            random.seed(seed)
         self.current_query = None
         self.candidate_documents = []
         self._ground_truth = {}
