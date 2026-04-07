@@ -12,11 +12,11 @@ from grader import grade
 from inference import get_client, get_llm_ranking
 
 def _clamp(x: float) -> float:
-    """Clamp all scores strictly within [0.1, 0.85]."""
-    if x <= 0.1:
-        return 0.1
-    if x >= 0.85:
-        return 0.85
+    """Clamp all scores strictly within (0, 1)."""
+    if x <= 0.0:
+        return 0.001
+    if x >= 1.0:
+        return 0.999
     return x
 
 def main():
