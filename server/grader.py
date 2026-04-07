@@ -27,11 +27,12 @@ class GraderResult(NamedTuple):
 # ---------------------------------------------------------------------------
 
 def _safe_score(score: float) -> float:
-    epsilon = 1e-6
-    if score <= 0.0:
-        return epsilon
-    if score >= 1.0:
-        return 1.0 - epsilon
+    MIN_SCORE = 0.1
+    MAX_SCORE = 0.85
+    if score <= MIN_SCORE:
+        return MIN_SCORE
+    if score >= MAX_SCORE:
+        return MAX_SCORE
     return score
 
 

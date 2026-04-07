@@ -82,11 +82,13 @@ RETRY_DELAY: float = 2.0                    # seconds between retries
 # Strict-format logging
 # ---------------------------------------------------------------------------
 
-def _clamp_open_interval(x: float, eps: float = 1e-6) -> float:
-    if x <= 0.0:
-        return eps
-    if x >= 1.0:
-        return 1.0 - eps
+def _clamp_open_interval(x: float) -> float:
+    MIN_SCORE = 0.1
+    MAX_SCORE = 0.85
+    if x <= MIN_SCORE:
+        return MIN_SCORE
+    if x >= MAX_SCORE:
+        return MAX_SCORE
     return x
 
 def log_start(task: str, env: str, model: str) -> None:
