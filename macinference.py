@@ -11,6 +11,14 @@ from models import Document, Observation, Action
 from grader import grade
 from inference import get_client, get_llm_ranking
 
+def _clamp(x: float) -> float:
+    """Clamp all scores strictly within [0.1, 0.85]."""
+    if x <= 0.1:
+        return 0.1
+    if x >= 0.85:
+        return 0.85
+    return x
+
 def main():
     print("Loading MS MARCO validation dataset (first 100 items) to build tasks...")
     # Load a small slice to find good rankable questions
@@ -79,6 +87,12 @@ def main():
             ndcg = 0.0
             precision = 0.0
             mrr = 0.0
+
+        # Clamp all scores strictly within [0.1, 0.85]
+        reward_score = _clamp(reward_score)
+        ndcg = _clamp(ndcg)
+        precision = _clamp(precision)
+        mrr = _clamp(mrr)
 
         # Print using exact same format as expected by OpenEnv grader
         print(f"\n[STEP]")

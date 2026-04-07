@@ -27,10 +27,10 @@ class GraderResult(NamedTuple):
 # ---------------------------------------------------------------------------
 
 def _safe_score(score: float) -> float:
-    """Replace exact boundary values only: 0.0 → 0.1, 1.0 → 0.85."""
-    if score <= 0.0:
+    """Clamp all scores strictly within [0.1, 0.85]."""
+    if score <= 0.1:
         return 0.1
-    if score >= 1.0:
+    if score >= 0.85:
         return 0.85
     return score
 

@@ -83,10 +83,10 @@ RETRY_DELAY: float = 2.0                    # seconds between retries
 # ---------------------------------------------------------------------------
 
 def _clamp_open_interval(x: float) -> float:
-    """Replace exact boundary values only: 0.0 → 0.1, 1.0 → 0.85."""
-    if x <= 0.0:
+    """Clamp all scores strictly within [0.1, 0.85]."""
+    if x <= 0.1:
         return 0.1
-    if x >= 1.0:
+    if x >= 0.85:
         return 0.85
     return x
 
