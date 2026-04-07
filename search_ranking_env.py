@@ -2,6 +2,16 @@ import math
 import random
 from typing import List, Dict, Any, Tuple, Optional
 
+
+def _safe_score(score: float) -> float:
+    """Clamp to be strictly within (0, 1)."""
+    epsilon = 1e-6
+    if score <= 0.0:
+        return epsilon
+    if score >= 1.0:
+        return 1.0 - epsilon
+    return score
+
 class SearchRankingEnv:
     """
     An OpenEnv-compatible environment for simulating a search ranking system.
@@ -100,16 +110,22 @@ class SearchRankingEnv:
         
         if expected_ids != provided_ids:
             # If invalid action, return 0 reward and terminate
-            return self.state(), 0.0, True, {"error": "Action must include exactly all candidate document IDs."}
+            return (
+                self.state(),
+                _safe_score(0.0),
+                True,
+                {"error": "Action must include exactly all candidate document IDs."},
+            )
             
         # Calculate Reward (NDCG)
         reward = self._calculate_ndcg(action)
+        reward = _safe_score(reward)
         
         # Auxiliary metrics
         info = {
             "ndcg": reward,
-            "precision_at_3": self._calculate_precision_at_k(action, k=3),
-            "mrr": self._calculate_mrr(action)
+            "precision_at_3": _safe_score(self._calculate_precision_at_k(action, k=3)),
+            "mrr": _safe_score(self._calculate_mrr(action)),
         }
         
         # Search ranking is inherently a single-step episode per query
@@ -135,21 +151,22 @@ class SearchRankingEnv:
             idcg += (2 ** rel - 1) / math.log2(i + 2)
             
         if idcg == 0.0:
-            return 1.0 if dcg == 0.0 else 0.0
+            raw = 1.0 if dcg == 0.0 else 0.0
+            return _safe_score(raw)
             
-        return dcg / idcg
+        return _safe_score(dcg / idcg)
 
     def _calculate_precision_at_k(self, predicted_ranking: List[str], k: int) -> float:
         """
         Calculates precision at K (considering relevance > 0 as relevant).
         """
         if not predicted_ranking:
-            return 0.0
+            return _safe_score(0.0)
         
         k = min(k, len(predicted_ranking))
         relevant_count = sum(1 for doc_id in predicted_ranking[:k] if self._ground_truth.get(doc_id, 0) > 0)
         
-        return relevant_count / k
+        return _safe_score(relevant_count / k)
 
     def _calculate_mrr(self, predicted_ranking: List[str]) -> float:
         """
@@ -157,5 +174,5 @@ class SearchRankingEnv:
         """
         for i, doc_id in enumerate(predicted_ranking):
             if self._ground_truth.get(doc_id, 0) > 0:
-                return 1.0 / (i + 1)
-        return 0.0
+                return _safe_score(1.0 / (i + 1))
+        return _safe_score(0.0)
