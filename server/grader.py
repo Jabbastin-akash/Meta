@@ -7,7 +7,7 @@ against ground truth relevance scores.
 Design principles:
   - Deterministic
   - No external ML libraries
-    - Continuous scoring in [0.0, 1.0]
+  - Continuous scoring in [0.0, 1.0]
   - Robust edge-case handling
 """
 
@@ -23,37 +23,26 @@ class GraderResult(NamedTuple):
 
 
 # ---------------------------------------------------------------------------
-# Safety helpers (CRITICAL)
+# Safety helpers
 # ---------------------------------------------------------------------------
 
-_STRICT_EPS: float = 1e-6
-
 def _clamp_0_1(score: float) -> float:
-    """Clamp scores into (0.0, 1.0) and guard against NaN/Inf.
-
-    Hackathon validation requires every task score to be strictly between 0 and 1
-    (i.e., never exactly 0.0 or 1.0).
-    """
+    """Clamp scores into [0.0, 1.0]."""
     if not isinstance(score, (int, float)):
-        return _STRICT_EPS
+        return 0.0
     if math.isnan(score) or math.isinf(score):
-        return _STRICT_EPS
-    if score <= 0.0:
-        return _STRICT_EPS
-    if score >= 1.0:
-        return 1.0 - _STRICT_EPS
-    return float(score)
+        return 0.0
+    return max(0.0, min(1.0, float(score)))
 
 
 def _dedupe_in_order(items: List[str]) -> List[str]:
-    """Remove duplicates while preserving order (defensive; Action already enforces uniqueness)."""
-    seen: set[str] = set()
-    out: List[str] = []
+    """Remove duplicates while preserving order."""
+    seen = set()
+    out = []
     for x in items:
-        if x in seen:
-            continue
-        seen.add(x)
-        out.append(x)
+        if x not in seen:
+            seen.add(x)
+            out.append(x)
     return out
 
 
@@ -62,6 +51,7 @@ def _dedupe_in_order(items: List[str]) -> List[str]:
 # ---------------------------------------------------------------------------
 
 def _compute_dcg(relevances: List[float]) -> float:
+    """Compute Discounted Cumulative Gain."""
     dcg = 0.0
     for i, rel in enumerate(relevances):
         dcg += (2 ** rel - 1) / math.log2(i + 2)
@@ -74,12 +64,10 @@ def _compute_dcg(relevances: List[float]) -> float:
 
 def compute_ndcg(predicted_ranking: List[str],
                  ground_truth: Dict[str, float]) -> float:
+    """Compute Normalized Discounted Cumulative Gain."""
 
-    if not ground_truth:
-        return _clamp_0_1(0.0)
-
-    if not predicted_ranking:
-        return _clamp_0_1(0.0)
+    if not ground_truth or not predicted_ranking:
+        return 0.0
 
     predicted_ranking = _dedupe_in_order(predicted_ranking)
 
@@ -88,26 +76,24 @@ def compute_ndcg(predicted_ranking: List[str],
     ]
     dcg = _compute_dcg(predicted_relevances)
 
-    # Compare against the best possible ordering for the same cutoff length.
     ideal_relevances = sorted(ground_truth.values(), reverse=True)[: len(predicted_ranking)]
     idcg = _compute_dcg(ideal_relevances)
 
     if idcg == 0.0:
-        # All relevances are zero — every ordering is equally "ideal".
-        return _clamp_0_1(1.0 if dcg == 0.0 else 0.0)
+        return 0.0
 
     return _clamp_0_1(dcg / idcg)
 
 
 def compute_precision_at_k(predicted_ranking: List[str],
-                           ground_truth: Dict[str, float],
-                           k: int = 3) -> float:
+                          ground_truth: Dict[str, float],
+                          k: int = 3) -> float:
+    """Compute Precision@K."""
 
     if not predicted_ranking or k <= 0:
-        return _clamp_0_1(0.0)
+        return 0.0
 
     predicted_ranking = _dedupe_in_order(predicted_ranking)
-
     k = min(k, len(predicted_ranking))
 
     relevant_count = sum(
@@ -115,15 +101,15 @@ def compute_precision_at_k(predicted_ranking: List[str],
         if ground_truth.get(doc_id, 0.0) > 0.0
     )
 
-    precision = relevant_count / k
-    return _clamp_0_1(precision)
+    return _clamp_0_1(relevant_count / k)
 
 
 def compute_mrr(predicted_ranking: List[str],
                 ground_truth: Dict[str, float]) -> float:
+    """Compute Mean Reciprocal Rank."""
 
     if not predicted_ranking:
-        return _clamp_0_1(0.0)
+        return 0.0
 
     predicted_ranking = _dedupe_in_order(predicted_ranking)
 
@@ -131,7 +117,7 @@ def compute_mrr(predicted_ranking: List[str],
         if ground_truth.get(doc_id, 0.0) > 0.0:
             return _clamp_0_1(1.0 / (i + 1))
 
-    return _clamp_0_1(0.0)
+    return 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -141,6 +127,7 @@ def compute_mrr(predicted_ranking: List[str],
 def grade(predicted_ranking: List[str],
           ground_truth: Dict[str, float],
           k: int = 3) -> GraderResult:
+    """Compute all metrics and return combined result."""
 
     ndcg = compute_ndcg(predicted_ranking, ground_truth)
     p_at_k = compute_precision_at_k(predicted_ranking, ground_truth, k=k)
