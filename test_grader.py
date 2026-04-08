@@ -24,8 +24,8 @@ WORST_RANKING = ["d4", "d5", "d3", "d2", "d1"]
 
 def test_ndcg_perfect():
     score = compute_ndcg(IDEAL_RANKING, GROUND_TRUTH)
-    assert abs(score - 1.0) < 1e-6, f"Expected 1.0, got {score}"
-    print("[PASS] NDCG: perfect ranking → 1.0")
+    assert 0.0 < score < 1.0 and score > 0.99, f"Expected near-1.0 in (0,1), got {score}"
+    print("[PASS] NDCG: perfect ranking → ~1.0")
 
 
 def test_ndcg_worst():
@@ -43,8 +43,8 @@ def test_ndcg_partial():
 
 def test_ndcg_empty_ranking():
     score = compute_ndcg([], GROUND_TRUTH)
-    assert score == 0.0, f"Expected 0.0 for empty ranking, got {score}"
-    print("[PASS] NDCG: empty ranking → 0.0")
+    assert 0.0 < score < 0.01, f"Expected small epsilon for empty ranking, got {score}"
+    print("[PASS] NDCG: empty ranking → ~0.0")
 
 
 def test_ndcg_missing_ids():
@@ -57,8 +57,8 @@ def test_ndcg_missing_ids():
 def test_ndcg_all_zero_relevance():
     gt_zero = {"d1": 0.0, "d2": 0.0, "d3": 0.0}
     score = compute_ndcg(["d1", "d2", "d3"], gt_zero)
-    assert score == 1.0, f"Expected 1.0 when all relevance is 0, got {score}"
-    print("[PASS] NDCG: all-zero relevance → 1.0")
+    assert 0.0 < score < 1.0 and score > 0.99, f"Expected near-1.0 in (0,1), got {score}"
+    print("[PASS] NDCG: all-zero relevance → ~1.0")
 
 
 def test_ndcg_deterministic():
@@ -72,14 +72,14 @@ def test_ndcg_deterministic():
 
 def test_precision_at_k_all_relevant():
     score = compute_precision_at_k(["d1", "d2", "d3"], GROUND_TRUTH, k=3)
-    assert score == 1.0, f"Expected 1.0, got {score}"
-    print("[PASS] Precision@3: all top-3 relevant → 1.0")
+    assert 0.0 < score < 1.0 and score > 0.99, f"Expected near-1.0 in (0,1), got {score}"
+    print("[PASS] Precision@3: all top-3 relevant → ~1.0")
 
 
 def test_precision_at_k_none_relevant():
     score = compute_precision_at_k(["d4", "d5", "d3"], GROUND_TRUTH, k=2)
-    assert score == 0.0, f"Expected 0.0, got {score}"
-    print("[PASS] Precision@2: no relevant in top-2 → 0.0")
+    assert 0.0 < score < 0.01, f"Expected small epsilon, got {score}"
+    print("[PASS] Precision@2: no relevant in top-2 → ~0.0")
 
 
 def test_precision_at_k_partial():
@@ -90,13 +90,13 @@ def test_precision_at_k_partial():
 
 def test_precision_at_k_empty():
     score = compute_precision_at_k([], GROUND_TRUTH, k=3)
-    assert score == 0.0
-    print("[PASS] Precision@K: empty ranking → 0.0")
+    assert 0.0 < score < 0.01
+    print("[PASS] Precision@K: empty ranking → ~0.0")
 
 
 def test_precision_at_k_k_larger_than_list():
     score = compute_precision_at_k(["d1", "d2"], GROUND_TRUTH, k=10)
-    assert score == 1.0, f"Expected 1.0, got {score}"
+    assert 0.0 < score < 1.0 and score > 0.99, f"Expected near-1.0 in (0,1), got {score}"
     print("[PASS] Precision@K: k > len(ranking) → uses full list")
 
 
@@ -104,8 +104,8 @@ def test_precision_at_k_k_larger_than_list():
 
 def test_mrr_first_is_relevant():
     score = compute_mrr(["d1", "d4", "d5"], GROUND_TRUTH)
-    assert score == 1.0, f"Expected 1.0, got {score}"
-    print("[PASS] MRR: first doc relevant → 1.0")
+    assert 0.0 < score < 1.0 and score > 0.99, f"Expected near-1.0 in (0,1), got {score}"
+    print("[PASS] MRR: first doc relevant → ~1.0")
 
 
 def test_mrr_second_is_relevant():
@@ -116,14 +116,14 @@ def test_mrr_second_is_relevant():
 
 def test_mrr_none_relevant():
     score = compute_mrr(["d4", "d5"], GROUND_TRUTH)
-    assert score == 0.0, f"Expected 0.0, got {score}"
-    print("[PASS] MRR: no relevant docs → 0.0")
+    assert 0.0 < score < 0.01, f"Expected small epsilon, got {score}"
+    print("[PASS] MRR: no relevant docs → ~0.0")
 
 
 def test_mrr_empty():
     score = compute_mrr([], GROUND_TRUTH)
-    assert score == 0.0
-    print("[PASS] MRR: empty ranking → 0.0")
+    assert 0.0 < score < 0.01
+    print("[PASS] MRR: empty ranking → ~0.0")
 
 
 # ===== Composite grade() Tests =====
@@ -134,10 +134,10 @@ def test_grade_returns_all_metrics():
     assert hasattr(result, "ndcg")
     assert hasattr(result, "precision_at_k")
     assert hasattr(result, "mrr")
-    assert abs(result.score - 1.0) < 1e-5
-    assert abs(result.ndcg - 1.0) < 1e-5
-    assert result.precision_at_k == 1.0
-    assert result.mrr == 1.0
+    assert 0.0 < result.score < 1.0 and result.score > 0.99
+    assert 0.0 < result.ndcg < 1.0 and result.ndcg > 0.99
+    assert 0.0 < result.precision_at_k < 1.0 and result.precision_at_k > 0.99
+    assert 0.0 < result.mrr < 1.0 and result.mrr > 0.99
     print("[PASS] grade(): perfect ranking returns all metrics correctly")
 
 

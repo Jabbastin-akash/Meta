@@ -78,8 +78,8 @@ def test_perfect_ranking_all_difficulties():
         action = Action(ranking=[d.id for d in ideal])
         _, reward, done, info = env.step(action)
         assert done is True
-        assert abs(reward.score - 1.0) < 1e-5, (
-            f"{diff}: perfect ranking yielded {reward.score}, expected 1.0"
+        assert 0.0 < reward.score < 1.0 and reward.score > 0.99, (
+            f"{diff}: perfect ranking yielded {reward.score}, expected near-1.0 in (0,1)"
         )
     print("[PASS] Perfect ranking → 1.0 for all difficulties")
 
@@ -91,7 +91,7 @@ def test_worst_ranking_all_difficulties():
         worst = sorted(obs.documents, key=lambda d: d.relevance, reverse=False)
         action = Action(ranking=[d.id for d in worst])
         _, reward, _, _ = env.step(action)
-        assert 0.0 <= reward.score < 1.0, (
+        assert 0.0 < reward.score < 1.0, (
             f"{diff}: worst ranking yielded {reward.score}"
         )
     print("[PASS] Worst ranking → score < 1.0 for all difficulties")

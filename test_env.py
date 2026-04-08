@@ -44,8 +44,8 @@ def test_reward_in_range():
         obs = env.reset(diff)
         action = Action(ranking=[doc.id for doc in obs.documents])
         _, reward, _, _ = env.step(action)
-        assert 0.0 <= reward.score <= 1.0, f"reward out of range for {diff}: {reward.score}"
-    print("[PASS] reward ∈ [0, 1] for all difficulties")
+        assert 0.0 < reward.score < 1.0, f"reward out of range for {diff}: {reward.score}"
+    print("[PASS] reward ∈ (0, 1) for all difficulties")
 
 
 def test_perfect_ranking():
@@ -57,11 +57,11 @@ def test_perfect_ranking():
         action = Action(ranking=[d.id for d in ideal])
         _, reward, done, info = env.step(action)
         assert done is True, "done must be True after step"
-        assert abs(reward.score - 1.0) < 1e-5, (
-            f"perfect ranking must yield 1.0, got {reward.score} ({diff})"
+        assert 0.0 < reward.score < 1.0 and reward.score > 0.99, (
+            f"perfect ranking yielded {reward.score}, expected near-1.0 in (0,1)"
         )
-        assert abs(info.ndcg - 1.0) < 1e-5
-    print("[PASS] perfect ranking → reward = 1.0 for all difficulties")
+        assert 0.0 < info.ndcg < 1.0 and info.ndcg > 0.99
+    print("[PASS] perfect ranking → reward ~ 1.0 for all difficulties")
 
 
 def test_invalid_action_missing_ids():
@@ -70,7 +70,7 @@ def test_invalid_action_missing_ids():
     # Submit only the first doc — missing the rest
     action = Action(ranking=[obs.documents[0].id])
     _, reward, done, info = env.step(action)
-    assert reward.score == 0.0, f"invalid action should yield 0.0, got {reward.score}"
+    assert 0.0 < reward.score < 0.01, f"invalid action should yield ~0.0, got {reward.score}"
     assert done is True
     print("[PASS] invalid action (missing IDs) → reward = 0.0")
 
@@ -81,7 +81,7 @@ def test_invalid_action_extra_ids():
     ids = [doc.id for doc in obs.documents] + ["bogus_id"]
     action = Action(ranking=ids)
     _, reward, done, _ = env.step(action)
-    assert reward.score == 0.0
+    assert 0.0 < reward.score < 0.01
     assert done is True
     print("[PASS] invalid action (extra IDs) → reward = 0.0")
 

@@ -26,16 +26,22 @@ class GraderResult(NamedTuple):
 # Safety helpers (CRITICAL)
 # ---------------------------------------------------------------------------
 
+_STRICT_EPS: float = 1e-6
+
 def _clamp_0_1(score: float) -> float:
-    """Clamp scores into [0.0, 1.0] and guard against NaN/Inf."""
+    """Clamp scores into (0.0, 1.0) and guard against NaN/Inf.
+
+    Hackathon validation requires every task score to be strictly between 0 and 1
+    (i.e., never exactly 0.0 or 1.0).
+    """
     if not isinstance(score, (int, float)):
-        return 0.0
+        return _STRICT_EPS
     if math.isnan(score) or math.isinf(score):
-        return 0.0
+        return _STRICT_EPS
     if score <= 0.0:
-        return 0.0
+        return _STRICT_EPS
     if score >= 1.0:
-        return 1.0
+        return 1.0 - _STRICT_EPS
     return float(score)
 
 
@@ -70,10 +76,10 @@ def compute_ndcg(predicted_ranking: List[str],
                  ground_truth: Dict[str, float]) -> float:
 
     if not ground_truth:
-        return 0.0
+        return _clamp_0_1(0.0)
 
     if not predicted_ranking:
-        return 0.0
+        return _clamp_0_1(0.0)
 
     predicted_ranking = _dedupe_in_order(predicted_ranking)
 
@@ -88,7 +94,7 @@ def compute_ndcg(predicted_ranking: List[str],
 
     if idcg == 0.0:
         # All relevances are zero — every ordering is equally "ideal".
-        return 1.0 if dcg == 0.0 else 0.0
+        return _clamp_0_1(1.0 if dcg == 0.0 else 0.0)
 
     return _clamp_0_1(dcg / idcg)
 
@@ -98,7 +104,7 @@ def compute_precision_at_k(predicted_ranking: List[str],
                            k: int = 3) -> float:
 
     if not predicted_ranking or k <= 0:
-        return 0.0
+        return _clamp_0_1(0.0)
 
     predicted_ranking = _dedupe_in_order(predicted_ranking)
 
@@ -117,7 +123,7 @@ def compute_mrr(predicted_ranking: List[str],
                 ground_truth: Dict[str, float]) -> float:
 
     if not predicted_ranking:
-        return 0.0
+        return _clamp_0_1(0.0)
 
     predicted_ranking = _dedupe_in_order(predicted_ranking)
 
@@ -125,7 +131,7 @@ def compute_mrr(predicted_ranking: List[str],
         if ground_truth.get(doc_id, 0.0) > 0.0:
             return _clamp_0_1(1.0 / (i + 1))
 
-    return 0.0
+    return _clamp_0_1(0.0)
 
 
 # ---------------------------------------------------------------------------
