@@ -7,7 +7,7 @@ against ground truth relevance scores.
 Design principles:
   - Deterministic
   - No external ML libraries
-  - Continuous scoring in [0.0, 1.0]
+  - Continuous scoring in (0, 1)  # STRICT RANGE
   - Robust edge-case handling
 """
 
@@ -27,16 +27,23 @@ class GraderResult(NamedTuple):
 # ---------------------------------------------------------------------------
 
 def _clamp_0_1(score: float) -> float:
-    """Clamp scores into [0.0, 1.0]."""
+    """Clamp scores into (0, 1) strictly."""
     if not isinstance(score, (int, float)):
-        return 0.0
+        return 0.5
     if math.isnan(score) or math.isinf(score):
-        return 0.0
-    return max(0.0, min(1.0, float(score)))
+        return 0.5
+
+    eps = 1e-6
+
+    if score <= 0.0:
+        return eps
+    if score >= 1.0:
+        return 1.0 - eps
+
+    return float(score)
 
 
 def _dedupe_in_order(items: List[str]) -> List[str]:
-    """Remove duplicates while preserving order."""
     seen = set()
     out = []
     for x in items:
@@ -51,7 +58,6 @@ def _dedupe_in_order(items: List[str]) -> List[str]:
 # ---------------------------------------------------------------------------
 
 def _compute_dcg(relevances: List[float]) -> float:
-    """Compute Discounted Cumulative Gain."""
     return sum(
         (2 ** rel - 1) / math.log2(i + 2)
         for i, rel in enumerate(relevances)
@@ -64,10 +70,9 @@ def _compute_dcg(relevances: List[float]) -> float:
 
 def compute_ndcg(predicted_ranking: List[str],
                  ground_truth: Dict[str, float]) -> float:
-    """Compute Normalized Discounted Cumulative Gain."""
 
     if not ground_truth or not predicted_ranking:
-        return 0.0
+        return _clamp_0_1(0.0)
 
     predicted_ranking = _dedupe_in_order(predicted_ranking)
 
@@ -82,7 +87,7 @@ def compute_ndcg(predicted_ranking: List[str],
     idcg = _compute_dcg(ideal_relevances)
 
     if idcg == 0.0:
-        return 0.0
+        return _clamp_0_1(0.0)
 
     return _clamp_0_1(dcg / idcg)
 
@@ -90,10 +95,9 @@ def compute_ndcg(predicted_ranking: List[str],
 def compute_precision_at_k(predicted_ranking: List[str],
                           ground_truth: Dict[str, float],
                           k: int = 3) -> float:
-    """Compute Precision@K."""
 
     if not predicted_ranking or k <= 0:
-        return 0.0
+        return _clamp_0_1(0.0)
 
     predicted_ranking = _dedupe_in_order(predicted_ranking)
     k = min(k, len(predicted_ranking))
@@ -108,10 +112,9 @@ def compute_precision_at_k(predicted_ranking: List[str],
 
 def compute_mrr(predicted_ranking: List[str],
                 ground_truth: Dict[str, float]) -> float:
-    """Compute Mean Reciprocal Rank."""
 
     if not predicted_ranking:
-        return 0.0
+        return _clamp_0_1(0.0)
 
     predicted_ranking = _dedupe_in_order(predicted_ranking)
 
@@ -119,7 +122,7 @@ def compute_mrr(predicted_ranking: List[str],
         if ground_truth.get(doc_id, 0.0) > 0.0:
             return _clamp_0_1(1.0 / (i + 1))
 
-    return 0.0
+    return _clamp_0_1(0.0)
 
 
 # ---------------------------------------------------------------------------
@@ -129,13 +132,11 @@ def compute_mrr(predicted_ranking: List[str],
 def grade(predicted_ranking: List[str],
           ground_truth: Dict[str, float],
           k: int = 3) -> GraderResult:
-    """Compute all metrics and return combined result."""
 
     ndcg = compute_ndcg(predicted_ranking, ground_truth)
     p_at_k = compute_precision_at_k(predicted_ranking, ground_truth, k)
     mrr = compute_mrr(predicted_ranking, ground_truth)
 
-    # 🔥 Only ndcg is used as final score (as per evaluation design)
     final_score = round(ndcg, 6)
 
     return GraderResult(
