@@ -55,33 +55,48 @@ SEED: int = 42                              # fixed seed for reproducibility
 MAX_RETRIES: int = 1                        # retry once on transient failure
 RETRY_DELAY: float = 2.0                    # seconds between retries
 
+# Constants for strict (0, 1) bounds
+EPSILON = 1e-10
+MIN_SCORE = EPSILON
+MAX_SCORE = 1.0 - EPSILON
+
 
 # ---------------------------------------------------------------------------
 # Strict-format logging
 # ---------------------------------------------------------------------------
 
 def _clamp_0_1(x: float) -> float:
-    """Clamp score into [0.0, 1.0] and guard against NaN/Inf."""
+    """Clamp score into (0.0, 1.0) - strictly between, excluding endpoints."""
     if not isinstance(x, (int, float)):
-        return 0.0
+        return 0.5  # Safe fallback
     if math.isnan(x) or math.isinf(x):
-        return 0.0
+        return 0.5  # Safe fallback
+    
+    # Clamp to (0, 1) exclusive
     if x <= 0.0:
-        return 0.0
+        return MIN_SCORE
     if x >= 1.0:
-        return 1.0
+        return MAX_SCORE
+    
     return float(x)
 
 
 def _format_score(x: float) -> str:
     """Human/judge-friendly float formatting: no forced decimals or trailing zeros."""
     x = _clamp_0_1(x)
-    if x == 0.0:
-        return "0"
-    if x == 1.0:
-        return "1"
-    # Fixed precision avoids scientific notation; trimming removes trailing zeros.
-    return f"{x:.12f}".rstrip("0").rstrip(".")
+    
+    # Format with enough precision, then strip trailing zeros
+    formatted = f"{x:.12f}".rstrip("0").rstrip(".")
+    
+    # Handle edge case where we get just "0" or "1" after stripping
+    # (shouldn't happen with our clamping, but be defensive)
+    if formatted == "0":
+        return f"{MIN_SCORE:.12f}".rstrip("0").rstrip(".")
+    if formatted == "1":
+        return f"{MAX_SCORE:.12f}".rstrip("0").rstrip(".")
+    
+    return formatted
+
 
 def log_start(task: str, env: str, model: str) -> None:
     print(f"[START] task={task} env={env} model={model}", flush=True)

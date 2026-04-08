@@ -7,7 +7,7 @@ against ground truth relevance scores.
 Design principles:
   - Deterministic
   - No external ML libraries
-    - Continuous scoring in (0.0, 1.0) - strictly between
+  - Continuous scoring in (0.0, 1.0) - strictly between
   - Robust edge-case handling
 """
 
@@ -23,27 +23,47 @@ class GraderResult(NamedTuple):
 
 
 # ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+EPSILON = 1e-10  # Small value to keep scores in (0, 1)
+MIN_SCORE = EPSILON
+MAX_SCORE = 1.0 - EPSILON
+SAFE_FALLBACK = 0.5  # Midpoint for edge cases
+
+
+# ---------------------------------------------------------------------------
 # Safety helpers (CRITICAL)
 # ---------------------------------------------------------------------------
 
-def _clamp_0_1(score: float) -> float:
-    """Clamp scores into (0.0, 1.0) - strictly between, excluding endpoints."""
+def _clamp_strict_0_1(score: float) -> float:
+    """
+    Clamp scores into (0.0, 1.0) - strictly between, excluding endpoints.
+    
+    This function ensures NO value can ever be exactly 0.0 or 1.0.
+    """
     if not isinstance(score, (int, float)):
-        return 0.5  # Safe fallback in valid range
+        return SAFE_FALLBACK
+    
     if math.isnan(score) or math.isinf(score):
-        return 0.5  # Safe fallback in valid range
+        return SAFE_FALLBACK
     
-    # Clamp to (0, 1) exclusive
+    # Clamp to strict bounds
     if score <= 0.0:
-        return 1e-10  # Very small positive number
+        return MIN_SCORE
     if score >= 1.0:
-        return 1.0 - 1e-10  # Just below 1
+        return MAX_SCORE
     
-    return float(score)
+    # Ensure floating-point values don't sit on boundaries
+    clamped = max(MIN_SCORE, min(MAX_SCORE, float(score)))
+    
+    # Final safety check - should never trigger, but guarantees contract
+    assert 0.0 < clamped < 1.0, f"Score {clamped} escaped bounds!"
+    
+    return clamped
 
 
 def _dedupe_in_order(items: List[str]) -> List[str]:
-    """Remove duplicates while preserving order (defensive; Action already enforces uniqueness)."""
+    """Remove duplicates while preserving order."""
     seen: set[str] = set()
     out: List[str] = []
     for x in items:
@@ -59,6 +79,7 @@ def _dedupe_in_order(items: List[str]) -> List[str]:
 # ---------------------------------------------------------------------------
 
 def _compute_dcg(relevances: List[float]) -> float:
+    """Compute Discounted Cumulative Gain."""
     dcg = 0.0
     for i, rel in enumerate(relevances):
         dcg += (2 ** rel - 1) / math.log2(i + 2)
@@ -71,64 +92,94 @@ def _compute_dcg(relevances: List[float]) -> float:
 
 def compute_ndcg(predicted_ranking: List[str],
                  ground_truth: Dict[str, float]) -> float:
-
+    """
+    Compute Normalized Discounted Cumulative Gain.
+    
+    Returns a score strictly in (0, 1).
+    """
+    # Edge case: no ground truth
     if not ground_truth:
-        return 0.5  # Changed from 0.0
+        return SAFE_FALLBACK
 
+    # Edge case: no predictions
     if not predicted_ranking:
-        return 0.5  # Changed from 0.0
+        return SAFE_FALLBACK
 
     predicted_ranking = _dedupe_in_order(predicted_ranking)
 
+    # Get relevance scores for predicted ranking
     predicted_relevances = [
         ground_truth.get(doc_id, 0.0) for doc_id in predicted_ranking
     ]
     dcg = _compute_dcg(predicted_relevances)
 
-    # Compare against the best possible ordering for the same cutoff length.
-    ideal_relevances = sorted(ground_truth.values(), reverse=True)[: len(predicted_ranking)]
+    # Get ideal ranking
+    ideal_relevances = sorted(
+        ground_truth.values(), 
+        reverse=True
+    )[: len(predicted_ranking)]
     idcg = _compute_dcg(ideal_relevances)
 
+    # Edge case: all documents have zero relevance
     if idcg == 0.0:
-        # All relevances are zero — return middle score
-        return 0.5  # Changed from conditional
+        return SAFE_FALLBACK
 
-    return _clamp_0_1(dcg / idcg)
+    # Compute NDCG
+    ndcg = dcg / idcg
+    
+    # Clamp to (0, 1)
+    return _clamp_strict_0_1(ndcg)
 
 
 def compute_precision_at_k(predicted_ranking: List[str],
                            ground_truth: Dict[str, float],
                            k: int = 3) -> float:
-
+    """
+    Compute Precision at K.
+    
+    Returns a score strictly in (0, 1).
+    """
+    # Edge cases
     if not predicted_ranking or k <= 0:
-        return 0.5  # Changed from 0.0
+        return SAFE_FALLBACK
 
     predicted_ranking = _dedupe_in_order(predicted_ranking)
-
     k = min(k, len(predicted_ranking))
 
+    # Count relevant documents in top-k
     relevant_count = sum(
         1 for doc_id in predicted_ranking[:k]
         if ground_truth.get(doc_id, 0.0) > 0.0
     )
 
+    # Compute precision
     precision = relevant_count / k
-    return _clamp_0_1(precision)
+    
+    # Clamp to (0, 1)
+    return _clamp_strict_0_1(precision)
 
 
 def compute_mrr(predicted_ranking: List[str],
                 ground_truth: Dict[str, float]) -> float:
-
+    """
+    Compute Mean Reciprocal Rank.
+    
+    Returns a score strictly in (0, 1).
+    """
+    # Edge case: no predictions
     if not predicted_ranking:
-        return 0.5  # Changed from 0.0
+        return SAFE_FALLBACK
 
     predicted_ranking = _dedupe_in_order(predicted_ranking)
 
+    # Find first relevant document
     for i, doc_id in enumerate(predicted_ranking):
         if ground_truth.get(doc_id, 0.0) > 0.0:
-            return _clamp_0_1(1.0 / (i + 1))
+            mrr = 1.0 / (i + 1)
+            return _clamp_strict_0_1(mrr)
 
-    return 0.5  # Changed from 0.0 - no relevant docs found
+    # No relevant document found
+    return MIN_SCORE
 
 
 # ---------------------------------------------------------------------------
@@ -138,14 +189,27 @@ def compute_mrr(predicted_ranking: List[str],
 def grade(predicted_ranking: List[str],
           ground_truth: Dict[str, float],
           k: int = 3) -> GraderResult:
-
+    """
+    Grade a predicted ranking against ground truth.
+    
+    Returns all scores strictly in (0, 1).
+    """
+    # Compute all metrics
     ndcg = compute_ndcg(predicted_ranking, ground_truth)
     p_at_k = compute_precision_at_k(predicted_ranking, ground_truth, k=k)
     mrr = compute_mrr(predicted_ranking, ground_truth)
 
+    # Double-check all scores are in valid range
+    ndcg = _clamp_strict_0_1(ndcg)
+    p_at_k = _clamp_strict_0_1(p_at_k)
+    mrr = _clamp_strict_0_1(mrr)
+
+    # Primary score is NDCG
+    score = ndcg
+
     return GraderResult(
-        score=_clamp_0_1(round(ndcg, 6)),
-        ndcg=_clamp_0_1(round(ndcg, 6)),
-        precision_at_k=_clamp_0_1(round(p_at_k, 6)),
-        mrr=_clamp_0_1(round(mrr, 6)),
+        score=score,
+        ndcg=ndcg,
+        precision_at_k=p_at_k,
+        mrr=mrr,
     )

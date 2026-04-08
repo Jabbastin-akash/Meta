@@ -28,6 +28,9 @@ TASK_REGISTRY = {
     "hard": HARD_TASKS,
 }
 
+# Constant for invalid action scores - must be strictly in (0, 1)
+INVALID_ACTION_SCORE = 1e-10
+
 
 class SearchRankingEnv:
     """
@@ -97,16 +100,15 @@ class SearchRankingEnv:
         try:
             action.validate_against_observation(obs)
         except ValueError:
-            # Return scores strictly within (0, 1)
-            eps = 1e-10
+            # Return minimal scores strictly within (0, 1) for invalid actions
             return (
                 obs,
-                Reward(score=eps),
+                Reward(score=INVALID_ACTION_SCORE),
                 True,
                 Info(
-                    ndcg=eps,
-                    precision_at_k=eps,
-                    mrr=eps,
+                    ndcg=INVALID_ACTION_SCORE,
+                    precision_at_k=INVALID_ACTION_SCORE,
+                    mrr=INVALID_ACTION_SCORE,
                 ),
             )
 
