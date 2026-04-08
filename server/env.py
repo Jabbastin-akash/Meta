@@ -137,7 +137,15 @@ class SearchRankingEnv:
         # --- Step 2: Compute reward via grader ---
         result = grade(action.ranking, self._ground_truth, k=3)
 
-        reward = Reward(score=result.score)
+        raw = max(0.0, min(1.0, result.score))
+
+        # Ensure the score is strictly between 0 and 1
+        if raw <= 0.0:
+            raw = 1e-6
+        if raw >= 1.0:
+            raw = 1.0 - 1e-6
+
+        reward = Reward(score=raw)
         info = Info(
             ndcg=result.ndcg,
             precision_at_k=result.precision_at_k,
