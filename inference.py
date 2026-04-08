@@ -7,9 +7,9 @@ records required by OpenEnv automated grading.
 
 Required environment variables
 ------------------------------
-    API_BASE_URL         - LLM endpoint (default: https://openrouter.ai/api/v1)
-    MODEL_NAME           - model identifier (default: openai/gpt-4o-mini)
-    OPENROUTER_API_KEY   - API key (falls back to OPENAI_API_KEY or HF_TOKEN)
+    API_BASE_URL         - Base URL for the OpenAI-compatible LLM endpoint
+    API_KEY              - API key for the provided proxy (LiteLLM)
+    MODEL_NAME           - model identifier (optional)
 """
 
 from __future__ import annotations
@@ -20,7 +20,6 @@ import json
 import time
 import math
 
-from pathlib import Path
 from typing import List, Optional, Tuple
 
 try:
@@ -31,48 +30,16 @@ except BaseException:  # pragma: no cover
 from server.env import SearchRankingEnv
 from server.models import Action, Observation
 
-try:
-    from dotenv import load_dotenv
-except ImportError:
-    load_dotenv = None
+# ---------------------------------------------------------------------------
+# Environment configuration
+# ---------------------------------------------------------------------------
 
+# Required (injected by evaluator)
+API_BASE_URL: str = os.environ.get("API_BASE_URL", "").strip()
+API_KEY: str = os.environ.get("API_KEY", "").strip()
 
-def _load_dotenv_fallback(path: str) -> None:
-    """Load a minimal .env file if python-dotenv isn't available."""
-    if not os.path.exists(path):
-        return
-    try:
-        with open(path, encoding="utf-8-sig") as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith("#") and "=" in line:
-                    key, value = line.split("=", 1)
-                    key = key.strip().lstrip("\ufeff")
-                    value = value.strip()
-                    if key and value:
-                        os.environ.setdefault(key, value)
-    except Exception:
-        pass
-
-
-def _load_env() -> None:
-    env_path = Path(__file__).parent / ".env"
-    if load_dotenv is not None:
-        load_dotenv(dotenv_path=env_path)
-
-    _load_dotenv_fallback(str(env_path))
-
-
-_load_env()
-
-API_BASE_URL: str = os.environ.get("API_BASE_URL", "https://openrouter.ai/api/v1")
-MODEL_NAME: str = os.environ.get("MODEL_NAME", "openai/gpt-4o-mini")
-API_KEY: str = (
-    os.environ.get("OPENROUTER_API_KEY")
-    or os.environ.get("OPENAI_API_KEY")
-    or os.environ.get("HF_TOKEN")
-    or os.environ.get("API_KEY", "")
-)
+# Optional
+MODEL_NAME: str = os.environ.get("MODEL_NAME", "gpt-4o-mini").strip() or "gpt-4o-mini"
 
 # --- Environment Configuration ---
 REMOTE_ENV_URL: Optional[str] = os.environ.get("REMOTE_ENV_URL")
@@ -139,59 +106,25 @@ def log_end(success: bool, steps: int, rewards: List[float]) -> None:
 # LLM Client
 # ---------------------------------------------------------------------------
 
-def get_client() -> OpenAI | None:
-    """Configure and return an OpenAI client."""
+def get_client() -> OpenAI:
+    """Configure and return an OpenAI client (strict: no silent fallback)."""
     if OpenAI is None:
-        print(
-            "WARNING: openai package is not installed; using deterministic fallback",
-            file=sys.stderr,
-        )
-        return None
+        raise RuntimeError("openai package not installed")
 
-    api_key = (
-        os.environ.get("OPENROUTER_API_KEY")
-        or os.environ.get("OPENAI_API_KEY")
-        or os.environ.get("HF_TOKEN")
-        or os.environ.get("API_KEY")
+    base_url = os.environ["API_BASE_URL"].strip()
+    api_key = os.environ["API_KEY"].strip()
+
+    if os.environ.get("DEBUG", "").strip().lower() in {"1", "true", "yes"}:
+        print(f"DEBUG: base_url set: {bool(base_url)}", file=sys.stderr)
+        print(f"DEBUG: api_key set: {bool(api_key)}", file=sys.stderr)
+
+    if not base_url or not api_key:
+        raise RuntimeError("Missing API_BASE_URL or API_KEY")
+
+    return OpenAI(
+        base_url=base_url,
+        api_key=api_key,
     )
-    if not api_key:
-        _load_env()
-        api_key = (
-            os.environ.get("OPENROUTER_API_KEY")
-            or os.environ.get("OPENAI_API_KEY")
-            or os.environ.get("HF_TOKEN")
-            or os.environ.get("API_KEY")
-        )
-
-    if os.environ.get("DEBUG", "").strip() in {"1", "true", "yes"}:
-        print(f"DEBUG: API Key loaded: {bool(api_key)}", file=sys.stderr)
-
-    base_url = os.environ.get("API_BASE_URL", "https://openrouter.ai/api/v1")
-
-    # Many OpenAI-compatible endpoints ignore the API key but the OpenAI SDK
-    # requires *some* value. Use a placeholder key so we can still talk to
-    # local/self-hosted servers.
-    if not api_key:
-        print(
-            "WARNING: No API key found (OPENROUTER_API_KEY/OPENAI_API_KEY/HF_TOKEN/API_KEY); "
-            "using placeholder and continuing",
-            file=sys.stderr,
-        )
-        api_key = "DUMMY_KEY"
-
-    try:
-        return OpenAI(
-            base_url=base_url,
-            api_key=api_key,
-        )
-    except BaseException as exc:
-        # Some environments can raise non-Exception errors here (e.g., SystemExit
-        # from dependency/config wrappers). Never crash inference on client init.
-        print(
-            f"WARNING: Failed to initialize OpenAI client (base_url={base_url!r}): {exc}",
-            file=sys.stderr,
-        )
-        return None
 
 
 # ---------------------------------------------------------------------------
@@ -287,7 +220,7 @@ def parse_ranking(response_text: str, valid_ids: List[str]) -> Tuple[Optional[Li
 # LLM Ranking Call (with retry)
 # ---------------------------------------------------------------------------
 
-def get_llm_ranking(client: OpenAI | None, observation: Observation) -> List[str]:
+def get_llm_ranking(client: OpenAI, observation: Observation) -> List[str]:
     """
     Send the observation to the LLM and return a ranked list of document IDs.
 
@@ -309,9 +242,6 @@ def get_llm_ranking(client: OpenAI | None, observation: Observation) -> List[str
             "content": prompt,
         },
     ]
-
-    if client is None:
-        return list(valid_ids)
 
     last_error = None
     for attempt in range(1 + MAX_RETRIES):
@@ -377,12 +307,7 @@ def main() -> None:
         print(f"ERROR: Failed to initialize environment: {exc}", file=sys.stderr)
         return
 
-    try:
-        client = get_client()
-    except BaseException as exc:
-        # Absolute last-resort: never let client initialization crash inference.
-        print(f"WARNING: get_client() raised; using deterministic fallback: {exc}", file=sys.stderr)
-        client = None
+    client = get_client()
 
     task_name = TASK_NAME.lower().strip()
     if task_name == "all":

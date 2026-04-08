@@ -119,15 +119,12 @@ environment_variables:
   - name: API_BASE_URL
     description: Base URL for the OpenAI-compatible LLM endpoint.
     required: true
+  - name: API_KEY
+    description: API key for the provided LiteLLM proxy.
+    required: true
   - name: MODEL_NAME
     description: Model identifier for the LLM.
-    required: true
-  - name: OPENAI_API_KEY
-    description: Alternative API key name for OpenAI-compatible endpoints.
     required: false
-  - name: HF_TOKEN
-    description: API key for the LLM endpoint (HF token).
-    required: true
   - name: LOCAL_IMAGE_NAME
     description: Local Docker image name for from_docker_image usage.
     required: false

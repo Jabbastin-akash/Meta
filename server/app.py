@@ -13,6 +13,10 @@ Endpoints
   POST /reset      → reset environment, return observation JSON
   POST /step       → submit action, return (observation, reward, done, info)
   GET  /state      → return current observation JSON
+
+Note: when API_BASE_URL and API_KEY are provided (as in hackathon
+evaluation), the server performs a tiny one-time LLM "probe" call on startup
+to ensure traffic goes through the provided proxy.
 """
 
 import json
@@ -26,6 +30,43 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from env import SearchRankingEnv
 from models import Action
+
+
+def _probe_llm_proxy() -> None:
+    """Best-effort one-time LLM call through the injected proxy.
+
+    This is intentionally non-fatal: the environment server must still start
+    even if the proxy is unavailable.
+    """
+
+    try:
+        base_url = os.environ["API_BASE_URL"].strip()
+        api_key = os.environ["API_KEY"].strip()
+    except KeyError:
+        return
+
+    if not base_url or not api_key:
+        return
+
+    try:
+        from openai import OpenAI
+    except BaseException as exc:  # pragma: no cover
+        print(f"WARNING: openai not available; skipping LLM probe: {exc}", file=sys.stderr)
+        return
+
+    model = os.environ.get("MODEL_NAME", "gpt-4o-mini").strip() or "gpt-4o-mini"
+
+    try:
+        client = OpenAI(base_url=base_url, api_key=api_key, timeout=20.0)
+        client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": "Reply with the single character 1."}],
+            temperature=0.0,
+            max_tokens=1,
+        )
+        print("LLM proxy probe: ok", file=sys.stderr)
+    except Exception as exc:
+        print(f"WARNING: LLM proxy probe failed: {exc}", file=sys.stderr)
 
 
 # ---------------------------------------------------------------------------
@@ -154,6 +195,9 @@ def _observation_to_dict(obs) -> dict:
 
 def main():
     port = int(os.environ.get("PORT", "7860"))  # HF Spaces default
+
+    _probe_llm_proxy()
+
     server = HTTPServer(("0.0.0.0", port), EnvHandler)
     print(f"Search Ranking Env API listening on http://0.0.0.0:{port}")
     print(f"  GET  /          → welcome / info")

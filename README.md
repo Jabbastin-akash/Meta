@@ -70,9 +70,9 @@ Three tasks are available via `reset(task=...)`:
 
 For the baseline inference script, configure the following:
 ```bash
-export API_BASE_URL="https://openrouter.ai/api/v1" # Or any OpenAI-compatible API
-export MODEL_NAME="your-model-name"
-export HF_TOKEN="your-api-key" # Or OPENAI_API_KEY
+export API_BASE_URL="https://your-proxy/v1" # Provided by the evaluator
+export API_KEY="your-proxy-key"              # Provided by the evaluator
+export MODEL_NAME="your-model-name"          # Optional (evaluator may set it)
 ```
 
 ### Running with Docker

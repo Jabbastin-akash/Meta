@@ -58,7 +58,11 @@ def main():
         print("Could not find suitable tasks in the slice.", file=sys.stderr)
         return
 
-    client = get_client()
+    try:
+        client = get_client()
+    except Exception as exc:
+        print(f"ERROR: Missing/invalid LLM proxy configuration: {exc}", file=sys.stderr)
+        return
 
     print("\n[START]")
     
