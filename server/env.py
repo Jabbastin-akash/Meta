@@ -97,7 +97,8 @@ class SearchRankingEnv:
         try:
             action.validate_against_observation(obs)
         except ValueError:
-            eps = 1e-6
+            # Return scores strictly within (0, 1)
+            eps = 1e-10
             return (
                 obs,
                 Reward(score=eps),
