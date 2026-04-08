@@ -52,10 +52,10 @@ def _dedupe_in_order(items: List[str]) -> List[str]:
 
 def _compute_dcg(relevances: List[float]) -> float:
     """Compute Discounted Cumulative Gain."""
-    dcg = 0.0
-    for i, rel in enumerate(relevances):
-        dcg += (2 ** rel - 1) / math.log2(i + 2)
-    return dcg
+    return sum(
+        (2 ** rel - 1) / math.log2(i + 2)
+        for i, rel in enumerate(relevances)
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -76,7 +76,9 @@ def compute_ndcg(predicted_ranking: List[str],
     ]
     dcg = _compute_dcg(predicted_relevances)
 
-    ideal_relevances = sorted(ground_truth.values(), reverse=True)[: len(predicted_ranking)]
+    ideal_relevances = sorted(
+        ground_truth.values(), reverse=True
+    )[: len(predicted_ranking)]
     idcg = _compute_dcg(ideal_relevances)
 
     if idcg == 0.0:
@@ -130,11 +132,14 @@ def grade(predicted_ranking: List[str],
     """Compute all metrics and return combined result."""
 
     ndcg = compute_ndcg(predicted_ranking, ground_truth)
-    p_at_k = compute_precision_at_k(predicted_ranking, ground_truth, k=k)
+    p_at_k = compute_precision_at_k(predicted_ranking, ground_truth, k)
     mrr = compute_mrr(predicted_ranking, ground_truth)
 
+    # 🔥 Only ndcg is used as final score (as per evaluation design)
+    final_score = round(ndcg, 6)
+
     return GraderResult(
-        score=_clamp_0_1(round(ndcg, 6)),
+        score=_clamp_0_1(final_score),
         ndcg=_clamp_0_1(round(ndcg, 6)),
         precision_at_k=_clamp_0_1(round(p_at_k, 6)),
         mrr=_clamp_0_1(round(mrr, 6)),
