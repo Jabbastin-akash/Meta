@@ -38,6 +38,10 @@ from server.models import Action, Observation
 API_BASE_URL: str = os.environ.get("API_BASE_URL", "").strip()
 API_KEY: str = os.environ.get("API_KEY", "").strip()
 
+# Optional (present in some templates; NOT used for authentication here)
+HF_TOKEN: str = os.environ.get("HF_TOKEN", "").strip()
+LOCAL_IMAGE_NAME: str = os.environ.get("LOCAL_IMAGE_NAME", "").strip()
+
 # Optional
 MODEL_NAME: str = os.environ.get("MODEL_NAME", "gpt-4o-mini").strip() or "gpt-4o-mini"
 
@@ -121,10 +125,13 @@ def get_client() -> OpenAI:
     if not base_url or not api_key:
         raise RuntimeError("Missing API_BASE_URL or API_KEY")
 
-    return OpenAI(
-        base_url=base_url,
-        api_key=api_key,
-    )
+    try:
+        return OpenAI(
+            base_url=base_url,
+            api_key=api_key,
+        )
+    except Exception as exc:
+        raise RuntimeError(f"Failed to initialize OpenAI client: {exc}") from exc
 
 
 # ---------------------------------------------------------------------------

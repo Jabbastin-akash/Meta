@@ -57,7 +57,7 @@ def _probe_llm_proxy() -> None:
     model = os.environ.get("MODEL_NAME", "gpt-4o-mini").strip() or "gpt-4o-mini"
 
     try:
-        client = OpenAI(base_url=base_url, api_key=api_key, timeout=20.0)
+        client = OpenAI(base_url=base_url, api_key=api_key)
         client.chat.completions.create(
             model=model,
             messages=[{"role": "user", "content": "Reply with the single character 1."}],

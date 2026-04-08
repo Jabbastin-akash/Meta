@@ -16,7 +16,7 @@ dependencies = [
     "fastapi",
     "uvicorn",
     "pydantic",
-    "openai",
+    "openai>=2.0.0",
     "openenv-core>=0.2.0"
 ]
 
