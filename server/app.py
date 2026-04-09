@@ -32,6 +32,11 @@ from env import SearchRankingEnv
 from models import Action
 
 
+def _clamp(x: float) -> float:
+    """Clamp score strictly between 0 and 1: [0.1, 0.95]."""
+    return max(0.1, min(0.95, float(x)))
+
+
 def _probe_llm_proxy() -> None:
     """Best-effort one-time LLM call through the injected proxy.
 
@@ -160,12 +165,12 @@ class EnvHandler(BaseHTTPRequestHandler):
             obs, reward, done, info = ENV.step(action)
             self._send_json({
                 "observation": _observation_to_dict(obs),
-                "reward": reward.score,
+                "reward": _clamp(reward.score),
                 "done": done,
                 "info": {
-                    "ndcg": info.ndcg,
-                    "precision_at_k": info.precision_at_k,
-                    "mrr": info.mrr,
+                    "ndcg": _clamp(info.ndcg),
+                    "precision_at_k": _clamp(info.precision_at_k),
+                    "mrr": _clamp(info.mrr),
                 },
             })
         except ValueError as exc:
