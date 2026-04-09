@@ -56,7 +56,7 @@ MAX_RETRIES: int = 1                        # retry once on transient failure
 RETRY_DELAY: float = 2.0                    # seconds between retries
 
 # Constants for strict (0, 1) bounds
-EPSILON = 1e-10
+EPSILON = 0.01
 MIN_SCORE = EPSILON
 MAX_SCORE = 1.0 - EPSILON
 

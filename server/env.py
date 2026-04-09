@@ -29,7 +29,7 @@ TASK_REGISTRY = {
 }
 
 # Constant for invalid action scores - must be strictly in (0, 1)
-INVALID_ACTION_SCORE = 1e-10
+INVALID_ACTION_SCORE = 0.01
 
 
 class SearchRankingEnv:

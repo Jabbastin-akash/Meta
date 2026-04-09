@@ -6,9 +6,9 @@ from typing import List, Dict, Any, Tuple, Optional
 def _safe_score(score: float) -> float:
     """Clamp scores into (0.0, 1.0) (exclusive)."""
     if score <= 0.0:
-        return 1e-10
+        return 0.01
     if score >= 1.0:
-        return 1.0 - 1e-10
+        return 0.99
     return float(score)
 
 class SearchRankingEnv:
