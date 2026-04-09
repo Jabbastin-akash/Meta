@@ -35,10 +35,10 @@ class Action(BaseModel):
 
 class Reward(BaseModel):
     """Represents the score returned by the environment."""
-    score: float = Field(..., ge=0.0, le=1.0, description="A normalized value between 0.0 and 1.0")
+    score: float = Field(..., gt=0.0, lt=1.0, description="A normalized value between 0.0 and 1.0")
 
 class Info(BaseModel):
     """Provides additional evaluation metrics."""
-    ndcg: float = Field(..., ge=0.0, le=1.0, description="Normalized Discounted Cumulative Gain")
-    precision_at_k: float = Field(..., ge=0.0, le=1.0, description="Precision at top K results")
-    mrr: float = Field(..., ge=0.0, le=1.0, description="Mean Reciprocal Rank")
+    ndcg: float = Field(..., gt=0.0, lt=1.0, description="Normalized Discounted Cumulative Gain")
+    precision_at_k: float = Field(..., gt=0.0, lt=1.0, description="Precision at top K results")
+    mrr: float = Field(..., gt=0.0, lt=1.0, description="Mean Reciprocal Rank")

@@ -4,11 +4,11 @@ from typing import List, Dict, Any, Tuple, Optional
 
 
 def _safe_score(score: float) -> float:
-    """Clamp scores into [0.0, 1.0] (inclusive)."""
+    """Clamp scores into (0.0, 1.0) (exclusive)."""
     if score <= 0.0:
-        return 0.0
+        return 1e-10
     if score >= 1.0:
-        return 1.0
+        return 1.0 - 1e-10
     return float(score)
 
 class SearchRankingEnv:
@@ -109,11 +109,17 @@ class SearchRankingEnv:
         
         if len(action) != len(expected_ids) or expected_ids != provided_ids:
             # If invalid action, return 0 reward and terminate
+            err_score = _safe_score(0.0)
             return (
                 self.state(),
-                0.0,
+                err_score,
                 True,
-                {"error": "Action must include exactly all candidate document IDs."},
+                {
+                    "error": "Action must include exactly all candidate document IDs.",
+                    "ndcg": err_score,
+                    "precision_at_3": err_score,
+                    "mrr": err_score
+                },
             )
             
         # Calculate Reward (NDCG)
@@ -160,7 +166,7 @@ class SearchRankingEnv:
         Calculates precision at K (considering relevance > 0 as relevant).
         """
         if not predicted_ranking:
-            return 0.0
+            return _safe_score(0.0)
         
         k = min(k, len(predicted_ranking))
         relevant_count = sum(1 for doc_id in predicted_ranking[:k] if self._ground_truth.get(doc_id, 0) > 0)
@@ -174,4 +180,4 @@ class SearchRankingEnv:
         for i, doc_id in enumerate(predicted_ranking):
             if self._ground_truth.get(doc_id, 0) > 0:
                 return _safe_score(1.0 / (i + 1))
-        return 0.0
+        return _safe_score(0.0)
