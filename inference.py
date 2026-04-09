@@ -55,10 +55,9 @@ SEED: int = 42                              # fixed seed for reproducibility
 MAX_RETRIES: int = 1                        # retry once on transient failure
 RETRY_DELAY: float = 2.0                    # seconds between retries
 
-# Constants for strict (0, 1) bounds
-EPSILON = 0.01
-MIN_SCORE = EPSILON
-MAX_SCORE = 1.0 - EPSILON
+# Constants for strict bounds
+MIN_SCORE = 0.1
+MAX_SCORE = 0.95
 
 
 # ---------------------------------------------------------------------------

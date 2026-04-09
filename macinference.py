@@ -12,12 +12,8 @@ from grader import grade
 from inference import get_client, get_llm_ranking
 
 def _clamp(x: float) -> float:
-    """Clamp all scores strictly within (0, 1)."""
-    if x <= 0.0:
-        return 0.01
-    if x >= 1.0:
-        return 0.99
-    return x
+    """Clamp all scores strictly within [0.2, 0.95]."""
+    return max(0.1, min(0.95, float(x)))
 
 def main():
     print("Loading MS MARCO validation dataset (first 100 items) to build tasks...")

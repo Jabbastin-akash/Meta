@@ -25,9 +25,8 @@ class GraderResult(NamedTuple):
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-EPSILON = 0.01  # Safe explicit value to keep scores robustly in (0, 1) and avoid float issues
-MIN_SCORE = EPSILON
-MAX_SCORE = 1.0 - EPSILON
+MIN_SCORE = 0.1
+MAX_SCORE = 0.95
 SAFE_FALLBACK = 0.5  # Midpoint for edge cases
 
 
