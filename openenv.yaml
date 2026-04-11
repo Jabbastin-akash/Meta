@@ -56,12 +56,12 @@ action:
 
 reward:
   type: number
-  exclusiveMinimum: 0.0
-  exclusiveMaximum: 1.0
+  exclusiveMinimum: 0
+  exclusiveMaximum: 1
   description: >
     A continuous score based on NDCG, strictly between 0 and 1 (exclusive).
     Higher values indicate better ranking quality.
-    Scores are clamped to [0.1, 0.95] to guarantee strict (0, 1) bounds.
+    Scores are clamped to to guarantee strict (0, 1) bounds.
 
 # ---------------------------------------------------------------------------
 # Tasks
