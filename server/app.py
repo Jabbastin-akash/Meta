@@ -33,8 +33,8 @@ from models import Action
 
 
 def _clamp(x: float) -> float:
-    """Clamp score strictly between 0 and 1: [0.1, 0.95]."""
-    return max(0.1, min(0.95, float(x)))
+    """Clamp score strictly between 0 and 1: [0.1, 0.9]."""
+    return max(0.1, min(0.9, float(x)))
 
 
 def _probe_llm_proxy() -> None:

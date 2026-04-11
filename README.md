@@ -70,17 +70,17 @@ Three tasks are available via `reset(task=...)`:
 
 For the baseline inference script, configure the following:
 ```bash
-export API_BASE_URL="https://your-proxy/v1" # Provided by the evaluator
-export API_KEY="your-proxy-key"              # Provided by the evaluator
-export MODEL_NAME="your-model-name"          # Optional (evaluator may set it)
+export API_BASE_URL="https://openrouter.ai/api/v1" # Or any OpenAI-compatible API
+export MODEL_NAME="your-model-name"
+export OPENAI_API_KEY="your-api-key"
 ```
 
 ### Running with Docker
 
 Build and run the OpenEnv HTTP API server (which powers the Hugging Face Deployment):
 ```bash
-docker build --build-arg PYTHON_IMAGE=python:3.11.9-slim -t search-ranking-env .
-docker run --rm -p 7860:7860 search-ranking-env
+docker build -t search-env .
+docker run -p 7860:7860 search-env
 ```
 The API responds to `/reset` and `/step`.
 
@@ -102,23 +102,3 @@ When the API lacks a valid key, the script performs a deterministic fallback gra
 - **Hard**: `0.6124`
 
 A production LLM (e.g. GPT-4o) should easily achieve > `0.95` on Easy and > `0.85` on Hard.
-
-## 8. Metrics, Edge Cases, Complexity
-
-**Implemented metrics** (see `server/grader.py`):
-- `ndcg` (primary reward): DCG uses `log2` discounting; NDCG normalizes by the ideal DCG.
-- `precision_at_k` (aux metric): fraction of top-$K$ items with relevance $> 0$.
-- `mrr` (aux metric): reciprocal rank of the first relevant item.
-
-**Edge cases handled**:
-- Empty predictions: return `0.0`.
-- Missing/unknown IDs: treated as relevance `0.0`.
-- Duplicate IDs: defensively deduped in metrics (the Action validator also rejects duplicates).
-- All-zero relevance: NDCG returns `1.0` (any ordering is equally ideal).
-- Division-by-zero: safe handling when ideal DCG is `0`.
-
-**Complexity**:
-- NDCG: $O(n \log n)$ (sorting for ideal DCG) + $O(n)$ DCG.
-- Precision@K: $O(k)$.
-- MRR: $O(n)$.
-# Meta

@@ -55,9 +55,10 @@ SEED: int = 42                              # fixed seed for reproducibility
 MAX_RETRIES: int = 1                        # retry once on transient failure
 RETRY_DELAY: float = 2.0                    # seconds between retries
 
-# Constants for strict bounds
+# Constants for strict bounds - scores are ALWAYS clamped to this range
+# to guarantee they are strictly between 0 and 1 (exclusive).
 MIN_SCORE = 0.1
-MAX_SCORE = 0.95
+MAX_SCORE = 0.9
 
 
 # ---------------------------------------------------------------------------
@@ -65,34 +66,37 @@ MAX_SCORE = 0.95
 # ---------------------------------------------------------------------------
 
 def _clamp_0_1(x: float) -> float:
-    """Clamp score into (0.0, 1.0) - strictly between, excluding endpoints."""
+    """Clamp score into [MIN_SCORE, MAX_SCORE] ⊂ (0.0, 1.0).
+    
+    EVERY score passes through this function and is guaranteed to be
+    in the safe range, so no value can ever be exactly 0.0 or 1.0.
+    """
     if not isinstance(x, (int, float)):
         return 0.5  # Safe fallback
     if math.isnan(x) or math.isinf(x):
         return 0.5  # Safe fallback
     
-    # Clamp to (0, 1) exclusive
-    if x <= 0.0:
-        return MIN_SCORE
-    if x >= 1.0:
-        return MAX_SCORE
-    
-    return float(x)
+    # Always clamp to the safe range — never allow anything outside
+    return max(MIN_SCORE, min(MAX_SCORE, float(x)))
 
 
 def _format_score(x: float) -> str:
-    """Human/judge-friendly float formatting: no forced decimals or trailing zeros."""
+    """Format a score as a string guaranteed to be strictly in (0, 1).
+    
+    Uses fixed decimal notation to avoid any rounding to '0' or '1'.
+    """
     x = _clamp_0_1(x)
     
-    # Format with enough precision, then strip trailing zeros
-    formatted = f"{x:.12f}".rstrip("0").rstrip(".")
+    # Use 6 decimal places — enough precision, safe from rounding issues
+    formatted = f"{x:.6f}".rstrip("0").rstrip(".")
     
-    # Handle edge case where we get just "0" or "1" after stripping
-    # (shouldn't happen with our clamping, but be defensive)
-    if formatted == "0":
-        return f"{MIN_SCORE:.12f}".rstrip("0").rstrip(".")
-    if formatted == "1":
-        return f"{MAX_SCORE:.12f}".rstrip("0").rstrip(".")
+    # Final string-level safety net
+    try:
+        val = float(formatted)
+        if val <= 0.0 or val >= 1.0:
+            formatted = f"{0.5:.6f}".rstrip("0").rstrip(".")
+    except ValueError:
+        formatted = "0.5"
     
     return formatted
 

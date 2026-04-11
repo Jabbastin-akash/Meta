@@ -26,7 +26,7 @@ class GraderResult(NamedTuple):
 # Constants
 # ---------------------------------------------------------------------------
 MIN_SCORE = 0.1
-MAX_SCORE = 0.95
+MAX_SCORE = 0.9
 SAFE_FALLBACK = 0.5  # Midpoint for edge cases
 
 
